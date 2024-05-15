@@ -41,7 +41,8 @@ def get_dir(dir):
         os.makedirs(dir, exist_ok=True)
     return dir
 
-PROJECT_PATH = get_dir('C:/Users/bjark/Documents/AU/Kandidat/4. Semester/Code/Speciale-Code')
+# PROJECT_PATH = get_dir('C:/Users/bjark/Documents/AU/Kandidat/4. Semester/Code/Speciale-Code')
+PROJECT_PATH = get_dir('/scratch/project_465001092')
 DATA_PATH = get_dir(os.path.join(PROJECT_PATH, "data"))
 
 
