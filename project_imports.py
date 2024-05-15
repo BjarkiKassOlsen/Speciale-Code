@@ -54,9 +54,9 @@ DATA_PATH = get_dir(os.path.join(PROJECT_PATH, "data"))
 # server = 'speciale-data.database.windows.net'
 # database = 'Data'
 # username = 'JB5247'
-# password = 'Olsen123'
+# password = 'ExMWQtVtA7NTQ9k'
 driver= '{ODBC Driver 18 for SQL Server}'
 
 # CONNECTION_STRING = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password}'
-CONNECTION_STRING = f'DRIVER={driver};SERVER=speciale-data.database.windows.net;DATABASE=Data;UID=JB5247;PWD=Olsen123'
-POOL_CONNECTION_STRING = "mssql+pyodbc://JB5247:Olsen123@speciale-data.database.windows.net/Data?driver=ODBC+Driver+18+for+SQL+Server"
+CONNECTION_STRING = f'DRIVER={driver};SERVER=speciale-data.database.windows.net;DATABASE=Data;UID=JB5247;PWD=ExMWQtVtA7NTQ9k'
+POOL_CONNECTION_STRING = "mssql+pyodbc://JB5247:ExMWQtVtA7NTQ9k@speciale-data.database.windows.net/Data?driver=ODBC+Driver+18+for+SQL+Server"
