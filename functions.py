@@ -18,36 +18,71 @@ def load_sp500_data(conn, start_date, end_date, freq='daily'):
     # S&P 500 Index Constituents             #
     ##########################################
 
+    sql_engine = conn.engine
+    connection = sql_engine.raw_connection()
+
     if freq == 'daily':
 
-        sp500 = conn.raw_sql(f"""
-                                SELECT a.*, b.date, b.prc, b.openprc, b.ret, 
-                                b.askhi, b.bidlo, b.vol, b.shrout, b.cfacpr, b.cfacshr
-                                FROM crsp.msp500list AS a,
-                                crsp.dsf AS b
-                                WHERE a.permno = b.permno
-                                AND b.date >= a.start AND b.date <= a.ending
-                                AND b.date >= '{start_date}'
-                                AND b.date <= '{end_date}'
-                                ORDER BY date;
-                                """, date_cols=['start', 'ending', 'date'])
+        # Query using raw_sql method
+        query = f"""
+            SELECT a.*, b.date, b.prc, b.openprc, b.ret, 
+                b.askhi, b.bidlo, b.vol, b.shrout, b.cfacpr, b.cfacshr
+            FROM crsp.msp500list AS a,
+                crsp.dsf AS b
+            WHERE a.permno = b.permno
+            AND b.date >= a.start
+            AND b.date <= a.ending
+            AND b.date >= '{start_date}'
+            AND b.date <= '{end_date}'
+            ORDER BY date;
+        """
+
+        sp500 = pd.read_sql_query(query, connection, parse_dates=['start', 'ending', 'date'])
+
+        # sp500 = conn.raw_sql(f"""
+        #                         SELECT a.*, b.date, b.prc, b.openprc, b.ret, 
+        #                         b.askhi, b.bidlo, b.vol, b.shrout, b.cfacpr, b.cfacshr
+        #                         FROM crsp.msp500list AS a,
+        #                         crsp.dsf AS b
+        #                         WHERE a.permno = b.permno
+        #                         AND b.date >= a.start AND b.date <= a.ending
+        #                         AND b.date >= '{start_date}'
+        #                         AND b.date <= '{end_date}'
+        #                         ORDER BY date;
+        #                         """, date_cols=['start', 'ending', 'date'])
         
         # Calculate the adjusted prices
         sp500[['prc', 'openprc', 'askhi', 'bidlo']] = sp500[['prc', 'openprc', 'askhi', 'bidlo']].div(sp500['cfacpr'], axis=0)
         
     elif freq == 'monthly':
 
-        sp500 = conn.raw_sql(f"""
-                                SELECT a.*, b.date, b.prc, b.ret, 
-                                b.askhi, b.bidlo, b.vol, b.shrout, b.cfacpr, b.cfacshr
-                                FROM crsp.msp500list AS a,
-                                crsp.msf AS b
-                                WHERE a.permno = b.permno
-                                AND b.date >= a.start AND b.date <= a.ending
-                                AND b.date >= '{start_date}'
-                                AND b.date <= '{end_date}'
-                                ORDER BY date;
-                                """, date_cols=['start', 'ending', 'date'])
+        # Query using raw_sql method
+        query = f"""
+            SELECT a.*, b.date, b.prc, b.ret, 
+                b.askhi, b.bidlo, b.vol, b.shrout, b.cfacpr, b.cfacshr
+            FROM crsp.msp500list AS a,
+                crsp.msf AS b
+            WHERE a.permno = b.permno
+            AND b.date >= a.start
+            AND b.date <= a.ending
+            AND b.date >= '{start_date}'
+            AND b.date <= '{end_date}'
+            ORDER BY date;
+        """
+
+        sp500 = pd.read_sql_query(query, connection, parse_dates=['start', 'ending', 'date'])
+
+        # sp500 = conn.raw_sql(f"""
+        #                         SELECT a.*, b.date, b.prc, b.ret, 
+        #                         b.askhi, b.bidlo, b.vol, b.shrout, b.cfacpr, b.cfacshr
+        #                         FROM crsp.msp500list AS a,
+        #                         crsp.msf AS b
+        #                         WHERE a.permno = b.permno
+        #                         AND b.date >= a.start AND b.date <= a.ending
+        #                         AND b.date >= '{start_date}'
+        #                         AND b.date <= '{end_date}'
+        #                         ORDER BY date;
+        #                         """, date_cols=['start', 'ending', 'date'])
 
         # Calculate the adjusted prices
         sp500[['prc', 'askhi', 'bidlo']] = sp500[['prc', 'askhi', 'bidlo']].div(sp500['cfacpr'], axis=0)
@@ -55,14 +90,24 @@ def load_sp500_data(conn, start_date, end_date, freq='daily'):
     # Calculate the adjusted volume
     sp500['vol'] = sp500['vol'] * sp500['cfacshr']
 
-
     # Add Other Descriptive Variables
-    mse = conn.raw_sql(f"""
-                            SELECT comnam, ncusip, namedt, nameendt, 
-                            permno, shrcd, exchcd, hsiccd, ticker
-                            FROM crsp.msenames
-                            WHERE permno IN ({",".join([str(permno) for permno in sp500.permno.unique()])})
-                            """, date_cols=['namedt', 'nameendt'])
+
+    # Query using raw_sql method
+    query = f"""
+            SELECT comnam, ncusip, namedt, nameendt, 
+            permno, shrcd, exchcd, hsiccd, ticker
+            FROM crsp.msenames
+            WHERE permno IN ({",".join([str(permno) for permno in sp500.permno.unique()])})
+            """
+    
+    mse = pd.read_sql_query(query, connection, parse_dates=['namedt', 'nameendt'])
+
+    # mse = conn.raw_sql(f"""
+    #                     SELECT comnam, ncusip, namedt, nameendt, 
+    #                     permno, shrcd, exchcd, hsiccd, ticker
+    #                     FROM crsp.msenames
+    #                     WHERE permno IN ({",".join([str(permno) for permno in sp500.permno.unique()])})
+    #                     """, date_cols=['namedt', 'nameendt'])
 
     # if nameendt is missing then set to today date
     mse['nameendt'] = mse['nameendt'].fillna(pd.to_datetime('today'))
@@ -86,13 +131,28 @@ def load_sp500_data(conn, start_date, end_date, freq='daily'):
 
 # Define the function to load the data
 def load_ff5_data(conn, start_date, end_date):
-    ff5 = conn.raw_sql(f"""
-                    select *
-                    from ff.fivefactors_daily
-                    where date>='{start_date}'
-                    AND date <= '{end_date}'
-                    order by date;
-                    """, date_cols=['date'])
+
+    sql_engine = conn.engine
+    connection = sql_engine.raw_connection()
+
+    # Query using raw_sql method
+    query = f"""
+            select *
+            from ff.fivefactors_daily
+            where date>='{start_date}'
+            AND date <= '{end_date}'
+            order by date;
+            """
+
+    ff5 = pd.read_sql_query(query, connection, parse_dates=['date'])
+
+    # ff5 = conn.raw_sql(f"""
+    #                 select *
+    #                 from ff.fivefactors_daily
+    #                 where date>='{start_date}'
+    #                 AND date <= '{end_date}'
+    #                 order by date;
+    #                 """, date_cols=['date'])
     
     return ff5
 

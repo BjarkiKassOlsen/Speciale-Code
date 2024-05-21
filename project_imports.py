@@ -5,6 +5,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 import os
+import platform
 
 from zipfile import ZipFile
 from tempfile import TemporaryDirectory
@@ -26,10 +27,10 @@ from joblib import Parallel, delayed
 
 import h5py
 
-import io
 import pyodbc
+# import io
 from sqlalchemy import create_engine, text
-from sqlalchemy.pool import QueuePool
+# from sqlalchemy.pool import QueuePool
 
 
 ###############################
@@ -41,9 +42,16 @@ def get_dir(dir):
         os.makedirs(dir, exist_ok=True)
     return dir
 
-# PROJECT_PATH = get_dir('C:/Users/bjark/Documents/AU/Kandidat/4. Semester/Code/Speciale-Code')
-PROJECT_PATH = get_dir('/scratch/project_465001092')
-DATA_PATH = get_dir(os.path.join(PROJECT_PATH, "data"))
+if platform.system() == 'Windows':
+    PROJECT_PATH = get_dir('C:/Users/bjark/Documents/AU/Kandidat/4. Semester/Code/Speciale-Code')
+    DATA_PATH = get_dir(os.path.join(PROJECT_PATH, "data"))
+elif platform.system() == 'Linux':
+    PROJECT_PATH = ('/data/Speciale-Code')
+    if os.path.exists(PROJECT_PATH):
+        DATA_PATH = (os.path.join(PROJECT_PATH, "data"))
+    else:
+        print(f'The following path does not exist: {PROJECT_PATH}')
+
 
 
 
