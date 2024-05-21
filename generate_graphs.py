@@ -178,8 +178,8 @@ class GraphDataset():
             table_name = f'I{self.window_size}VolFInd{list(self.indicator[0].values())[0]}'
 
         # Check if the directory exists, if not, create it
-        if not os.path.exists(table_name):
-            os.makedirs(table_name)
+        if not os.path.exists(os.path.join(DATA_PATH, table_name)):
+            os.makedirs(os.path.join(DATA_PATH, table_name))
 
         # Utilize parallel processing to generate the images for all the stocks quickly
         dataset_all = Parallel(n_jobs=self.parallel_num)(delayed(image_generator)(
