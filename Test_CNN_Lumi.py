@@ -7,6 +7,11 @@ import functions
 
 import copy
 
+run = neptune.init_run(
+    project="bjarki/Speciale",
+    api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiJkMzc0ZjBjMy0wYzBjLTQwMGYtODExYS1iNDM1MjAxZDdlNWMifQ==",
+)  # your credentials
+
 # Log into the Wharton database
 conn = wrds.Connection(wrds_username='bjarki')
 
@@ -51,4 +56,5 @@ dataset = generate_graphs.GraphDataset(df = sp500_daily, win_size=ws, mode='trai
 # Generate the image set
 image_set, table = dataset.generate_images()
 
-
+# Stop the monitoring on Neptune
+run.stop()

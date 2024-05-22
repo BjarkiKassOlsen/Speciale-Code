@@ -119,7 +119,7 @@ def image_generator(permno, df, image_size, lookback, indicator, show_volume, pr
 
 
 
-def show_single_graph(entry, path):
+def show_single_graph(entry, path, run):
 
     # Load the image from file
     image_path = f'{DATA_PATH}/{path}/{entry[0]}'
@@ -137,7 +137,16 @@ def show_single_graph(entry, path):
     plt.title(f'Ret5: {entry[1]}, Ret20: {entry[2]}, Ret60: {entry[3]}\n Last Date is: {date_part}')
     plt.axis('off')  # Optional: Hide the axes
     plt.tight_layout()
-    plt.show()
+
+    # Save the plot to a temporary file
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
+        plt.savefig(tmpfile.name, format='png')
+    
+    # Log the plot to Neptune
+    run["plots/show_single_graph"].upload(tmpfile.name)
+    plt.close(plt.gcf())
+
+    # plt.show()
 
 
 

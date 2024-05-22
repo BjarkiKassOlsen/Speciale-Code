@@ -7,13 +7,18 @@ import functions
 
 import copy
 
+run = neptune.init_run(
+    project="bjarki/Speciale",
+    api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiJkMzc0ZjBjMy0wYzBjLTQwMGYtODExYS1iNDM1MjAxZDdlNWMifQ==",
+)  # your credentials
+
 table = 'I20VolTInd20'
 
 dataset_all = pd.read_csv(f'{DATA_PATH}/{table}_dataset.csv')
 
 dataset_all = dataset_all.values.tolist()
 
-generate_graphs.show_single_graph(dataset_all[5], table)
+generate_graphs.show_single_graph(dataset_all[5], table, run)
 
 
 import custom_model
@@ -94,8 +99,12 @@ epoch_stats, best_validate_metrics, model = train.train_n_epochs(n_epochs = n_ep
                                                                     early_stop = False, 
                                                                     early_stop_patience = 10, 
                                                                     lr=1e-5,
-                                                                    regression_label=reg_label)
+                                                                    regression_label=reg_label,
+                                                                    run=run)
 
-train.plot_epoch_stats(epoch_stats)
+train.plot_epoch_stats(epoch_stats, run)
 
-print(epoch_stats)
+# print(epoch_stats)
+
+# Stop the monitoring on Neptune
+run.stop()

@@ -22,14 +22,16 @@ from sklearn.model_selection import train_test_split
 
 from PIL import Image
 
-from tqdm import tqdm
-from joblib import Parallel, delayed
+from tqdm import tqdm # Show progressbar
+from joblib import Parallel, delayed # Run multiple jobs simultanously
+import neptune # Display run on neptune (for Lumi)
 
-import h5py
+# import h5py
 
-import pyodbc
+# import pyodbc
 # import io
-from sqlalchemy import create_engine, text
+import tempfile
+# from sqlalchemy import create_engine, text
 # from sqlalchemy.pool import QueuePool
 
 

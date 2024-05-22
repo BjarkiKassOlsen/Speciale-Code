@@ -5,7 +5,7 @@ import copy
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Define helper functions
-@staticmethod
+# @staticmethod
 def _update_running_metrics(loss, labels, preds, running_metrics):
     running_metrics["running_loss"] += loss.item() * len(labels)
     running_metrics["running_correct"] += (preds == labels).sum().item()
@@ -14,7 +14,7 @@ def _update_running_metrics(loss, labels, preds, running_metrics):
     running_metrics["FP"] += (preds * (labels - 1)).sum().abs().item()
     running_metrics["FN"] += ((preds - 1) * labels).sum().abs().item()
 
-@staticmethod
+# @staticmethod
 def _generate_epoch_stat(epoch, learning_rate, num_samples, running_metrics):
     TP, TN, FP, FN = (running_metrics["TP"],
                       running_metrics["TN"],
@@ -85,7 +85,7 @@ def evaluate(model, dataloaders_dict, pred_win, criterion, new_label=None):
 
 
 def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader, 
-                   early_stop, early_stop_patience, lr=1e-4, regression_label=False):
+                   early_stop, early_stop_patience, lr=1e-4, regression_label=False, run=None):
 
     # Define a loss function and optimizer
     if regression_label:
@@ -221,6 +221,18 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
         # Save the epoch stats history
         epoch_stats_history["train"].append(epoch_stat_train)
         epoch_stats_history["valid"].append(epoch_stat_valid)
+
+        #Upload stats to neptne
+        run["train/loss"].append(epoch_stat_train["loss"])
+        run["train/accuracy"].append(epoch_stat_train["accy"])
+        run["train/MCC"].append(epoch_stat_train["MCC"])
+        run["train/diff"].append(epoch_stat_train["diff"])
+
+        run["valid/loss"].append(epoch_stat_valid["loss"])
+        run["valid/accuracy"].append(epoch_stat_valid["accy"])
+        run["valid/MCC"].append(epoch_stat_valid["MCC"])
+        run["valid/diff"].append(epoch_stat_valid["diff"])
+
         
         print(f'Current epoch: {epoch}. \nBest epoch: {best_validate_metrics["epoch"]}')
 
@@ -244,7 +256,7 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
 
 
 # Plot the stats for each epoch
-def plot_epoch_stats(epoch_stats_dict):
+def plot_epoch_stats(epoch_stats_dict, run):
 
     epochs = [stat['epoch'] for stat in epoch_stats_dict['train']]
 
@@ -282,7 +294,14 @@ def plot_epoch_stats(epoch_stats_dict):
     axes[1, 1].legend()
 
     plt.tight_layout()
-    plt.show()
+    
+    # Save the plot to a temporary file
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
+        plt.savefig(tmpfile.name, format='png')
+    
+    # Log the plot to Neptune
+    run["plots/epoch_stats"].upload(tmpfile.name)
+    plt.close(plt.gcf())
 
 
 
