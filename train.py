@@ -222,17 +222,18 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
         epoch_stats_history["train"].append(epoch_stat_train)
         epoch_stats_history["valid"].append(epoch_stat_valid)
 
-        #Upload stats to neptne
-        run["train/loss"].append(epoch_stat_train["loss"])
-        run["train/accuracy"].append(epoch_stat_train["accy"])
-        run["train/MCC"].append(epoch_stat_train["MCC"])
-        run["train/diff"].append(epoch_stat_train["diff"])
+        if run is not None:
 
-        run["valid/loss"].append(epoch_stat_valid["loss"])
-        run["valid/accuracy"].append(epoch_stat_valid["accy"])
-        run["valid/MCC"].append(epoch_stat_valid["MCC"])
-        run["valid/diff"].append(epoch_stat_valid["diff"])
+            # Upload stats to neptne
+            run["train/loss"].append(epoch_stat_train["loss"])
+            run["train/accuracy"].append(epoch_stat_train["accy"])
+            run["train/MCC"].append(epoch_stat_train["MCC"])
+            run["train/diff"].append(epoch_stat_train["diff"])
 
+            run["valid/loss"].append(epoch_stat_valid["loss"])
+            run["valid/accuracy"].append(epoch_stat_valid["accy"])
+            run["valid/MCC"].append(epoch_stat_valid["MCC"])
+            run["valid/diff"].append(epoch_stat_valid["diff"])
         
         print(f'Current epoch: {epoch}. \nBest epoch: {best_validate_metrics["epoch"]}')
 

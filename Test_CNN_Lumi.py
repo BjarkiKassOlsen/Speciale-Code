@@ -16,8 +16,8 @@ run = neptune.init_run(
 conn = wrds.Connection(wrds_username='bjarki')
 
 # Setting start and end date for the data
-start_date = "01/01/2022"
-end_date = "12/31/2022"
+start_date = "01/01/1993"
+end_date = "12/31/2023"
 
 reload(functions)
 

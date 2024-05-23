@@ -42,8 +42,11 @@ custom_transforms = transforms.Compose([
     transforms.ToTensor(),  # Convert PIL images to tensors
 ])
 
+learn_data = dataset_all[dataset_all['date']<=199912]
+test_data = dataset_all[dataset_all['date']>199912]
+
 # Initialize your dataset
-graph_dataset = custom_dataset.GraphDataset(dataset_all, path = table, transform=custom_transforms)
+graph_dataset = custom_dataset.GraphDataset(learn_data, path = table, transform=custom_transforms)
 
 # Define some variables
 train_ratio = 0.8
