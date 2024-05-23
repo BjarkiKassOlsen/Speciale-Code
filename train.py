@@ -296,13 +296,18 @@ def plot_epoch_stats(epoch_stats_dict, run):
 
     plt.tight_layout()
     
-    # Save the plot to a temporary file
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
-        plt.savefig(tmpfile.name, format='png')
-    
-    # Log the plot to Neptune
-    run["plots/epoch_stats"].upload(tmpfile.name)
-    plt.close(plt.gcf())
+    if run is not None:
+
+        # Save the plot to a temporary file
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
+            plt.savefig(tmpfile.name, format='png')
+        
+        # Log the plot to Neptune
+        run["plots/epoch_stats"].upload(tmpfile.name)
+        plt.close(plt.gcf())
+    else:
+
+        plt.show()
 
 
 
