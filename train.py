@@ -257,7 +257,7 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
 
 
 # Plot the stats for each epoch
-def plot_epoch_stats(epoch_stats_dict, run):
+def plot_epoch_stats(epoch_stats_dict, run=None):
 
     epochs = [stat['epoch'] for stat in epoch_stats_dict['train']]
 
