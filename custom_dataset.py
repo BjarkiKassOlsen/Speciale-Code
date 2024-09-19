@@ -2,143 +2,123 @@
 from project_imports import *
 
 
+
+
 class GraphDataset(Dataset):
-    def __init__(self, dataset_list, path, transform=None):
+    def __init__(self, path, transform=None, mode='train'):
         """
         Args:
-            dataset_list (list of lists): List containing the file names of the images and their labels.
+            hdf5_path (str): Path to the HDF5 file containing the images and metadata.
             transform (callable, optional): Optional transform to be applied on a sample.
 
         Output:
             sample (dict): Dictionary containing the loaded image and the labels.
         """
-        self.dataset_list = dataset_list
+        self.file_path = path
         self.transform = transform
-        # self.active_table = active_table
-        # Set up a pooled engine
-        # self.engine = create_engine(POOL_CONNECTION_STRING, poolclass=QueuePool, max_overflow=10, pool_size=5)
-
-        # self.connection_string = CONNECTION_STRING
-        self.data_dir = f'{DATA_PATH}/{path}/'
+        self.mode = mode
+        self.dataset = None
+        
+        with h5py.File(self.file_path, 'r') as file:
+            self.dataset_len = len(file["labels"])
 
     def __len__(self):
-        return len(self.dataset_list)
+        return self.dataset_len
 
     def __getitem__(self, idx):
+        
+        if self.dataset is None:
+            self.dataset = h5py.File(self.file_path, 'r')
         
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        # Extract the image filename from the dataset list
-        img = os.path.join(self.data_dir, self.dataset_list[idx][0])
-        image = Image.open(img).convert('L')  # 'L' mode means grayscale
-        labels = self.dataset_list[idx][1:]
-
-        # # Extract the image filename from the dataset list
-        # image_filename = self.dataset_list[idx][0]
-        # labels = self.dataset_list[idx][1:]
-
-        # # Connect to the database
-        # conn = pyodbc.connect(self.connection_string)
-        # cursor = conn.cursor()
-
-        # try:
-        #     # Retrieve the image data from the database
-        #     cursor.execute(f"SELECT FileData FROM {self.active_table} WHERE FileName = ?", (image_filename,))
-        #     image_data = cursor.fetchone()[0]
-        #     image_stream = io.BytesIO(image_data)
-
-        #     # Load image from binary stream
-        #     image = Image.open(image_stream).convert('L')  # Convert to grayscale if needed
-
-        # finally:
-        #     conn.close()
-
-
-        # # Retrieve the image data from the database
-        # self.cursor.execute(f"SELECT FileData FROM {self.active_table} WHERE FileName = ?", (image_filename,))
-        # image_data = self.cursor.fetchone()[0]
-        # image_stream = io.BytesIO(image_data)
-
-        # # Load image from binary stream
-        # image = Image.open(image_stream).convert('L')  # Convert to grayscale if needed
-
-        # with self.engine.connect() as conn:
-        #     result = conn.execute(f"SELECT FileData FROM {self.active_table} WHERE FileName = ?", (image_filename,))
-        #     image_data = result.fetchone()[0]
-
-        # image_stream = io.BytesIO(image_data)
-        # image = Image.open(image_stream).convert('L')
+        # Retrieve the image binary data from the HDF5 file
+        binary_image = self.dataset['images'][idx]
+    
+        # Convert the binary data to a PIL image using BytesIO
+        image = Image.open(io.BytesIO(binary_image)).convert('L')  # Convert to grayscale ('L' mode)
 
         if self.transform:
             image = self.transform(image)
 
-        sample = {'image': image, 'ret5': labels[0], 'ret20': labels[1], 'ret60': labels[2]}
-        
-        # # Split the string and extract the date
-        # date_part = self.dataset_list[idx][0].split('_')[1].split('.')[0]
+        # Retrieve label and additional metadata
+        label = self.dataset['labels'][idx]
 
-        return sample#, date_part
-    
+        if self.mode == 'train':
+            return {'image': image, 'ret20': label}
 
-# import torch
-# from torch.utils.data import Dataset
-# from PIL import Image
-# import io
-# from sqlalchemy import create_engine, text
-# from sqlalchemy.pool import QueuePool
+        elif self.mode == 'test':
+            date = self.dataset['dates'][idx].decode('utf-8')
+            permno = self.dataset['permnos'][idx].decode('utf-8')
 
-# import torch
-# from torch.utils.data import Dataset
-# from PIL import Image
-# import io
-# from sqlalchemy import create_engine, text
-# from sqlalchemy.orm import scoped_session, sessionmaker
-# from sqlalchemy.pool import QueuePool
+            return {'image': image, 'ret20': label, 'date': date, 'permno': permno}
+
+    def __del__(self):
+        """Ensure the HDF5 file is closed when the object is deleted."""
+        if self.dataset is not None:
+            self.dataset.close()
+            self.dataset = None
+
+
+
 
 # class GraphDataset(Dataset):
-#     def __init__(self, dataset_list, active_table, transform=None):
+#     def __init__(self, dataset_list, path, transform=None, mode='train'):
 #         """
 #         Args:
 #             dataset_list (list of lists): List containing the file names of the images and their labels.
 #             transform (callable, optional): Optional transform to be applied on a sample.
+
+#         Output:
+#             sample (dict): Dictionary containing the loaded image and the labels.
 #         """
 #         self.dataset_list = dataset_list
 #         self.transform = transform
-#         self.active_table = active_table
-#         self.connection_string = POOL_CONNECTION_STRING
+#         self.mode = mode
+#         # self.active_table = active_table
+#         # Set up a pooled engine
+#         # self.engine = create_engine(POOL_CONNECTION_STRING, poolclass=QueuePool, max_overflow=10, pool_size=5)
 
-#         # Initialize the connection pool
-#         self.engine = create_engine(self.connection_string, poolclass=QueuePool, pool_size=10, max_overflow=20)
-#         self.Session = scoped_session(sessionmaker(bind=self.engine))
+#         # self.connection_string = CONNECTION_STRING
+#         self.data_dir = f'{DATA_PATH}/{path}/'
 
 #     def __len__(self):
 #         return len(self.dataset_list)
 
 #     def __getitem__(self, idx):
+        
 #         if torch.is_tensor(idx):
 #             idx = idx.tolist()
 
 #         # Extract the image filename from the dataset list
-#         image_filename = self.dataset_list[idx][0]
-#         labels = self.dataset_list[idx][1:]
-
-#         # Retrieve the image data from the database
-#         session = self.Session()
-#         try:
-#             result = session.execute(text(f"SELECT FileData FROM {self.active_table} WHERE FileName = :filename"),
-#                                      {"filename": image_filename})
-#             image_data = result.fetchone()[0]
-#             image_stream = io.BytesIO(image_data)
-
-#             # Load image from binary stream
-#             image = Image.open(image_stream).convert('L')  # Convert to grayscale if needed
-#         finally:
-#             session.close()
-
+#         img = os.path.join(self.data_dir, self.dataset_list[idx][0])
+#         image = Image.open(img).convert('L')  # 'L' mode means grayscale
+        
 #         if self.transform:
 #             image = self.transform(image)
+        
+#         if self.mode == 'train':
+            
+#             label = self.dataset_list[idx][1]
+            
+#             return {'image': image, 'ret20': label}
+        
+#         elif self.mode == 'test':
+            
+#             label = self.dataset_list[idx][1]
+#             date = self.dataset_list[idx][2]
+#             permno = self.dataset_list[idx][3]
+            
+#             # Convert date to string if it's a pandas Timestamp
+#             if isinstance(date, pd.Timestamp):
+#                 date = date.strftime('%Y-%m-%d')
+            
+#             return {'image': image, 'ret20': label, 'date': date, 'permno': permno}
+        
+        
+        
+        
+        
+        
 
-#         sample = {'image': image, 'ret5': labels[0], 'ret20': labels[1], 'ret60': labels[2]}
-
-#         return sample

@@ -1,1 +1,3 @@
-data
+data/*
+!data/US/I20VolTInd20_train.h5
+!data/US/I20VolTInd20_test.h5

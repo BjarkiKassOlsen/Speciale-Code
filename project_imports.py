@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 
 import os
 import platform
+from datetime import datetime
 
 from zipfile import ZipFile
 from tempfile import TemporaryDirectory
@@ -20,7 +21,9 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset, random_split
 
 from sklearn.model_selection import train_test_split
 
+import h5py
 from PIL import Image
+import io
 
 from tqdm import tqdm # Show progressbar
 from joblib import Parallel, delayed # Run multiple jobs simultanously
@@ -65,9 +68,9 @@ elif platform.system() == 'Linux':
 # server = 'speciale-data.database.windows.net'
 # database = 'Data'
 # username = 'JB5247'
-# password = 'ExMWQtVtA7NTQ9k'
-driver= '{ODBC Driver 18 for SQL Server}'
+# password = ''
+# driver= '{ODBC Driver 18 for SQL Server}'
 
-# CONNECTION_STRING = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password}'
-CONNECTION_STRING = f'DRIVER={driver};SERVER=speciale-data.database.windows.net;DATABASE=Data;UID=JB5247;PWD=ExMWQtVtA7NTQ9k'
-POOL_CONNECTION_STRING = "mssql+pyodbc://JB5247:ExMWQtVtA7NTQ9k@speciale-data.database.windows.net/Data?driver=ODBC+Driver+18+for+SQL+Server"
+# # CONNECTION_STRING = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+# CONNECTION_STRING = f'DRIVER={driver};SERVER=speciale-data.database.windows.net;DATABASE=Data;UID=JB5247;PWD='
+# POOL_CONNECTION_STRING = "mssql+pyodbc://JB5247:@speciale-data.database.windows.net/Data?driver=ODBC+Driver+18+for+SQL+Server"

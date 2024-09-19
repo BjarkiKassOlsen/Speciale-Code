@@ -15,30 +15,135 @@ import copy
 conn = wrds.Connection(wrds_username='bjarki')
 
 # Setting start and end date for the data
-start_date = "01/01/2023"
+start_date = "01/01/2020"
 end_date = "12/31/2023"
 
+# # Query using raw_sql method
+# query = f"""
+#     SELECT a.*, b.date, b.prc, b.openprc, b.ret, 
+#         b.askhi, b.bidlo, b.vol, b.shrout, b.cfacpr, b.cfacshr
+#     FROM crsp.msp500list AS a,
+#         crsp.dsf AS b
+#     WHERE a.permno = b.permno
+#     AND b.date >= a.start
+#     AND b.date <= a.ending
+#     AND b.date >= '{start_date}'
+#     AND b.date <= '{end_date}'
+#     ORDER BY date;
+# """
+
+# sql_engine = conn.engine
+# connection = sql_engine.raw_connection()
+
+# sp500 = pd.read_sql_query(query, connection, parse_dates=['start', 'ending', 'date'])
+
+
+# db = wrds.Connection()
 
 # Reload the module.
 reload(functions)
 
-sp500_daily = functions.load_sp500_data(conn, start_date, end_date, freq = 'daily')
+sp500_daily = functions.load_sp500_data(conn, start_date, end_date, freq = 'daily', add_desc=False)
 
-sp500 = functions.load_sp500_data(conn, start_date, end_date, freq = 'monthly')
+sp500_monthly = functions.load_sp500_data(conn, start_date, end_date, freq = 'monthly')
 
-market_long = conn.raw_sql(f"""
-                            SELECT b.permno, b.date, b.ret
-                            FROM crsp.msf AS b
-                            WHERE b.date >= '{start_date}'
-                            AND b.date <= '{end_date}'
-                            ORDER BY date;
-                            """, date_cols=['date'])
+
+# market_long = conn.raw_sql(f"""
+#                             SELECT b.permno, b.date, b.ret
+#                             FROM crsp.msf AS b
+#                             WHERE b.date >= '{start_date}'
+#                             AND b.date <= '{end_date}'
+#                             ORDER BY date;
+#                             """, date_cols=['date'])
                             
                             
 
 
 
-table_name = 'I20VolTInd20'
+# Example DataFrame - replace this with your actual DataFrame
+# sp500_daily = pd.read_csv('sp500_data.csv')  # Uncomment and modify if loading from a file
+
+# Connect to the database
+conn = pyodbc.connect(CONNECTION_STRING)
+cursor = conn.cursor()
+
+# Function to map pandas dtype to SQL
+def dtype_to_sql(dtype):
+    if "float" in dtype.name:
+        return "FLOAT"
+    elif "int" in dtype.name:
+        return "INT"
+    elif "datetime" in dtype.name:
+        return "DATETIME"
+    else:  # Default to VARCHAR for object, etc. Consider handling more types as needed.
+        return "VARCHAR(255)"
+
+create_table_query = "CREATE TABLE sp500_daily ("
+for col, dtype in sp500_daily.dtypes.items():  # Using items() instead of iteritems()
+    sql_dtype = dtype_to_sql(dtype)
+    create_table_query += f"{col} {sql_dtype}, "
+create_table_query = create_table_query.rstrip(', ') + ')'
+
+# Display the SQL create table command
+print(create_table_query)
+
+
+# Cleaning float columns
+float_cols = [col for col in sp500_daily.columns if 'FLOAT' in str(sp500_daily[col].dtype)]
+for col in float_cols:
+    # Replace infinities and NaNs
+    sp500_daily[col] = sp500_daily[col].replace([np.inf, -np.inf], np.nan)
+    sp500_daily[col].fillna(0, inplace=True)  # Assuming 0 is a suitable fill value; adjust as necessary.
+
+    # Optionally, add checks for overly large numbers if needed
+    # Example: sp500_daily[col] = np.clip(sp500_daily[col], -1e38, 1e38)
+
+# Ensure all data types are correct and convert datetimes to strings if necessary
+for col in sp500_daily.columns:
+    if 'DATETIME' in create_table_query and col in create_table_query:
+        sp500_daily[col] = sp500_daily[col].astype(str)
+
+
+data_tuples = list(sp500_daily.itertuples(index=False, name=None))
+
+# Generate placeholder for SQL insert statement
+placeholders = ', '.join(['?' for _ in sp500_daily.columns])
+insert_query = f"INSERT INTO sp500_daily VALUES ({placeholders})"
+
+# Assuming 'float_cols' is correctly identified as columns with float data type
+float_cols = [col for col in sp500_daily.columns if sp500_daily[col].dtype == 'float64' or sp500_daily[col].dtype == 'float32']
+for col in float_cols:
+    sp500_daily[col] = sp500_daily[col].apply(lambda x: None if pd.isna(x) else float(x))
+
+# Ensure data is correctly converted by checking some rows
+print(sp500_daily[float_cols].head())
+
+data_tuples = [tuple(x) for x in sp500_daily.to_numpy()]
+
+placeholders = ', '.join(['?' for _ in sp500_daily.columns])
+insert_query = f"INSERT INTO sp500_daily VALUES ({placeholders})"
+
+# Attempt to upload data, logging each tuple
+try:
+    for data_tuple in data_tuples:
+        # Log the data tuple right before executing
+        print("Inserting data:", data_tuple)
+        cursor.execute(insert_query, data_tuple)
+    conn.commit()
+    print("Data uploaded successfully.")
+except Exception as e:
+    print(f"An error occurred while inserting data: {e}")
+    print(f"Problematic data: {data_tuple}")
+    conn.rollback()  # Ensures that partial data isn't left in the database
+
+
+# Close the connection
+cursor.close()
+conn.close()
+
+
+
+# table_name = 'I20VolTInd20'
 
 # conn = pyodbc.connect(CONNECTION_STRING)
 # cursor = conn.cursor()
@@ -596,10 +701,12 @@ reload(generate_graphs)
 # Define the window size to be used (input)
 ws = 20
 
+first_trading_day = "31-05-2022"
+
 # Get out the dataset
-dataset = generate_graphs.GraphDataset(df = sp500_daily, win_size=ws, mode='train', label='Ret5', 
+dataset = generate_graphs.GraphDataset(df = sp500_daily, win_size=ws, mode='train', label='Ret20', 
                                        indicator = [{'MA': 20}], show_volume=True, 
-                                       predict_movement=True, parallel_num=-1)
+                                       predict_movement=True, cut_off_date=first_trading_day, parallel_num=-1)
 
 
 # Generate the image set
@@ -616,7 +723,18 @@ image_set, table = dataset.generate_images()
 
 dataset_all = pd.read_csv(f'{DATA_PATH}/{table}_dataset.csv')
 
-dataset_all = dataset_all.values.tolist()
+# Extract date and convert to datetime
+dataset_all['date'] = pd.to_datetime(dataset_all.iloc[:,0].str.split('_').str[-1].str.replace('.png', ''), format='%Y-%m-%d')
+# dataset_all['date'] = pd.to_datetime(dataset_all.iloc[:,0].str.extract(r'(\d{4}-\d{2})')[0], format='%Y-%m')
+
+
+# Split the dataset
+learn_data = dataset_all[dataset_all['date'] <= '2022-05']
+test_data = dataset_all[dataset_all['date'] > '2022-05']
+
+
+learn_data = learn_data.values.tolist()
+test_data = test_data.values.tolist()
 
 # # Plot a graph
 # generate_graphs.show_single_graph(image_set[0][0])
@@ -634,13 +752,69 @@ dataset_all = dataset_all.values.tolist()
 # for graph in dataset_all:
 #     generate_graphs.show_single_graph(graph)
 
-generate_graphs.show_single_graph(dataset_all[5], table)
+generate_graphs.show_single_graph(learn_data[5], table)
 
 # data = h5py.File(h5_filename)
 
 # np.array(data[table]['FileName'])[4]
 # np.array(data[table]['FileData'])[4]
 
+
+import pyodbc
+
+conn = pyodbc.connect(CONNECTION_STRING)
+cursor = conn.cursor()
+
+# cursor.execute(f"CREATE TABLE IF NOT EXISTS I20VolTInd20 (ID VARCHAR(50) NOT NULL PRIMARY KEY, Image VARBINARY(MAX) NOT NULL)")
+
+try:
+    # Assuming `cursor` is a cursor object connected to a SQL Server database
+    sql_command = """
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'I20VolTInd20' AND type = 'U')
+    BEGIN
+        CREATE TABLE I20VolTInd20 (
+            ID VARCHAR(50) NOT NULL PRIMARY KEY,
+            Image VARBINARY(MAX) NOT NULL
+        )
+    END
+    """
+    cursor.execute(sql_command)
+    cursor.commit()
+except Exception as e:
+    print("An error occurred:", e)
+finally:
+    cursor.close()
+
+image_path = f'{DATA_PATH}/I20VolTInd20/'
+
+# Fetch all PNG filenames
+filenames = [f for f in os.listdir(image_path) if f.endswith('.png')]
+
+# Iterate over the files in the specified directory with a progress bar
+for filename in tqdm(filenames, desc="Uploading images"):
+    if filename.endswith('.png'):  # Check if the file is a PNG image
+        file_id = filename.split('.')[0]  # Assuming the ID is the part of the filename before '.png'
+        full_path = os.path.join(image_path, filename)
+
+        with open(full_path, 'rb') as file:
+            binary_data = file.read()
+
+        try:
+            # SQL command to insert data
+            sql_insert_blob_query = f"""
+            INSERT INTO {table} (ID, Image) VALUES (?, ?)
+            """
+            # Executing the SQL command and committing changes
+            cursor.execute(sql_insert_blob_query, (file_id, binary_data))
+            cursor.commit()
+            # print(f"Successfully uploaded {filename}")
+        
+        except Exception as e:
+            print(f"Failed to upload {filename}: {e}")
+
+cursor.close()
+conn.close()
+print("Database connection closed.")
 
 
 # def inspect_h5_file(h5_filename):
@@ -656,42 +830,42 @@ generate_graphs.show_single_graph(dataset_all[5], table)
 #############################
 
 
-# Assuming your dataframe and path are defined as follows:
-save_path = f'{DATA_PATH}/I20VolTInd20/'
-# dataframe_path = 'path_to_your_dataframe.csv'  # Modify this path accordingly
+# # Assuming your dataframe and path are defined as follows:
+# save_path = f'{DATA_PATH}/I20VolTInd20/'
+# # dataframe_path = 'path_to_your_dataframe.csv'  # Modify this path accordingly
 
-# # Load the dataframe
-# dataset_all = pd.read_csv(dataframe_path)
+# # # Load the dataframe
+# # dataset_all = pd.read_csv(dataframe_path)
 
-# Define the HDF5 file path
-hdf5_path = f'{DATA_PATH}/{table}_images.h5'
+# # Define the HDF5 file path
+# hdf5_path = f'{DATA_PATH}/{table}_images.h5'
 
-# Open an HDF5 file
-with h5py.File(hdf5_path, 'w') as h5f:
-    # Create datasets for images and labels
-    # Assuming images are 256x256 and grayscale
-    images_dset = h5f.create_dataset('images', (len(dataset_all), 64, 60), dtype='uint8', compression='gzip')
-    labels_dset = h5f.create_dataset('labels', (len(dataset_all), 3), dtype='float32', compression='gzip')
+# # Open an HDF5 file
+# with h5py.File(hdf5_path, 'w') as h5f:
+#     # Create datasets for images and labels
+#     # Assuming images are 256x256 and grayscale
+#     images_dset = h5f.create_dataset('images', (len(dataset_all), 64, 60), dtype='uint8', compression='gzip')
+#     labels_dset = h5f.create_dataset('labels', (len(dataset_all), 3), dtype='float32', compression='gzip')
 
-    # Iterate through each row in the DataFrame, load the image, and save it along with the labels
-    for i, row in tqdm(dataset_all.iterrows(), total=len(dataset_all), desc='Processing images'):
-        # Load image
-        img_path = os.path.join(save_path, row[0])
-        with Image.open(img_path) as img:
-            img_array = np.array(img)
+#     # Iterate through each row in the DataFrame, load the image, and save it along with the labels
+#     for i, row in tqdm(dataset_all.iterrows(), total=len(dataset_all), desc='Processing images'):
+#         # Load image
+#         img_path = os.path.join(save_path, row[0])
+#         with Image.open(img_path) as img:
+#             img_array = np.array(img)
 
-        # # Check if the image needs resizing
-        # if img_array.shape[0] != 64 or img_array.shape[1] != 60:
-        #     img = img.resize((64, 60))
-        #     img_array = np.array(img)
+#         # # Check if the image needs resizing
+#         # if img_array.shape[0] != 64 or img_array.shape[1] != 60:
+#         #     img = img.resize((64, 60))
+#         #     img_array = np.array(img)
 
-        # Store the image in the dataset
-        images_dset[i, :, :] = img_array
+#         # Store the image in the dataset
+#         images_dset[i, :, :] = img_array
 
-        # Store the labels in the dataset
-        labels_dset[i] = row[1:4]  # Assuming the labels are in columns 1, 2, and 3
+#         # Store the labels in the dataset
+#         labels_dset[i] = row[1:4]  # Assuming the labels are in columns 1, 2, and 3
 
-print("All data has been saved to HDF5.")
+# print("All data has been saved to HDF5.")
 
 
 
@@ -714,7 +888,8 @@ reload(custom_dataset)
 #     dataset_all = dataset_all + symbol_data[1]
 # image_set = [] # clear memory
 
-
+# learn_data = dataset_all[dataset_all['date']<=202204]
+# test_data = dataset_all[dataset_all['date']>202204]
 
 # Define transformations
 custom_transforms = transforms.Compose([
@@ -722,7 +897,7 @@ custom_transforms = transforms.Compose([
 ])
 
 # Initialize your dataset
-graph_dataset = custom_dataset.GraphDataset(dataset_all, path = table, transform=custom_transforms)
+graph_dataset = custom_dataset.GraphDataset(learn_data, path = table, transform=custom_transforms)
 
 # Define some variables
 train_ratio = 0.8
@@ -784,6 +959,21 @@ epoch_stats, best_validate_metrics, model = train.train_n_epochs(n_epochs = n_ep
                                                                     regression_label=reg_label)
 
 train.plot_epoch_stats(epoch_stats)
+
+
+test_data
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
