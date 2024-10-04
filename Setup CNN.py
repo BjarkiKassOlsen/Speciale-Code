@@ -22,22 +22,96 @@ import copy
 conn = wrds.Connection(wrds_username='bjarki')
 
 # Setting start and end date for the data
-start_date = "01/01/2012"
-end_date = "01/01/2020"
+start_date = "01/01/1993"
+end_date = "01/01/2022"
+
+
+# Set initial parameters
+start_year = 1993
+initial_end_year = 1999
+window_size = 4
+overlap = 1
+drop_rate = 0.0
+adj_prc = False
+
+# Reload the required modules
+reload(functions)
+reload(generate_graphs)
+
+dates_to_predict = list(crspm.date.unique())
+
+# Initialize an empty list to collect all outputs
+dataset = []
+
+# Loop over the years with a 5-year time window and 1-year overlap
+while start_year + window_size - 1 <= initial_end_year or start_year < initial_end_year:
+    # Calculate end year for the current window
+    end_year = start_year + window_size - 1
+    
+    if end_year > initial_end_year:
+        end_year = initial_end_year
+        
+    # Set the start and end dates for this iteration
+    start_date = f"01/01/{start_year}"
+    end_date = f"01/01/{end_year}"
+    
+    print(start_date, end_date)
 
 
 ####### 10516_1993-03-08.png' 10375_1994-11-28.png
 ######### ONLY RUN TO UPDATE EXISTING DATA #########
 
-# Reload the module.
-reload(functions)
+    # Reload the module.
+    reload(functions)
+    
+    # # Labels to be predicted
+    # labels = crspm[(crspm['date'] >= pd.to_datetime(start_date)) & (crspm['date'] <= pd.to_datetime(end_date))][['permno', 'date', 'excess_ret_ahead']]
 
-sp500_daily = functions.load_sp500_data(conn, start_date, end_date, freq = 'daily', add_desc=False)
-US_market = functions.load_US_market(conn, start_date, end_date, freq = 'daily', add_desc=False)
+    
+    # sp500_daily = functions.load_sp500_data(conn, start_date, end_date, freq = 'daily', add_desc=False)
+    US_market = functions.load_US_market(conn, start_date, end_date, freq = 'daily', add_desc=False, ret = False)
+    
+    US_market = US_market.rename(columns={
+        'date': 'Date', 
+        'prc': 'Close', 
+        'openprc': 'Open', 
+        'askhi': 'High', 
+        'bidlo': 'Low', 
+        'vol': 'Volume',
+        'ret20': 'Ret20'
+    })
+    
+    US_market.Close = US_market.Close.abs()
+    
+    # sp500_daily.to_csv(f'{DATA_PATH}/sp500_daily.csv', index=False)
+    
+    # Reload the module
+    reload(generate_graphs)
+    
+    # Define the window size to be used (input)
+    ws = 20
+    
+    first_trading_day = "01-01-2001"
+    
+    market = 'US'
+    
+    # Get out the dataset
+    dataset_gen = generate_graphs.GraphDataset(df = US_market, win_size=ws, mode='train', label='Ret20', market = market,
+                                           indicator = [{'MA': 20}], show_volume=True, drop_rate = drop_rate, adj_prc=adj_prc,
+                                           predict_movement=True, dates_to_gen=dates_to_predict, parallel_num=-1)
+    
+    # Generate the image set
+    dataset_append = dataset_gen.generate_images()
+    
+    # Append the generated output to `dataset`
+    dataset.extend(dataset_append)  # Use `.extend()` to combine all lists into `dataset`
+    
+    # Move to the next start year (this creates the 1-year overlap)
+    start_year += window_size - overlap - 1
 
-# Filter out permno's with less than 40 observations
-sp500_daily = sp500_daily.groupby('permno').filter(lambda x: len(x) >= 40)
-US_market = US_market.groupby('permno').filter(lambda x: len(x) >= 40)
+# # Filter out permno's with less than 40 observations
+# sp500_daily = sp500_daily.groupby('permno').filter(lambda x: len(x) >= 40)
+# US_market = US_market.groupby('permno').filter(lambda x: len(x) >= 40)
 
 
 # # Ensure 'date' column is of datetime type
@@ -78,7 +152,7 @@ US_market = US_market.groupby('permno').filter(lambda x: len(x) >= 40)
 start_date = "01/01/2001"
 
 US_market_monthly = functions.load_US_market(conn, start_date, end_date, freq = 'monthly', add_desc=False)
-sp500_monthly = functions.load_sp500_data(conn, start_date, end_date, freq = 'monthly')
+# sp500_monthly = functions.load_sp500_data(conn, start_date, end_date, freq = 'monthly')
 
 ff5_monthly = functions.load_ff5_data(conn, start_date, end_date, freq = 'monthly')
 
@@ -95,38 +169,22 @@ sp500_daily = sp500_daily.rename(columns={
     'ret20': 'Ret20'
 })
 
-US_market = US_market.rename(columns={
-    'date': 'Date', 
-    'prc': 'Close', 
-    'openprc': 'Open', 
-    'askhi': 'High', 
-    'bidlo': 'Low', 
-    'vol': 'Volume',
-    'ret20': 'Ret20'
-})
-
-US_market.Close = US_market.Close.abs()
-
-sp500_daily.to_csv(f'{DATA_PATH}/sp500_daily.csv', index=False)
-
-# Reload the module
-reload(generate_graphs)
-
-# Define the window size to be used (input)
-ws = 20
-
-first_trading_day = "01-01-2001"
-
-market = 'US'
-
-# Get out the dataset
-dataset = generate_graphs.GraphDataset(df = US_market, win_size=ws, mode='train', label='Ret20', market = market,
-                                       indicator = [{'MA': 20}], show_volume=True,
-                                       predict_movement=True, cut_off_date=first_trading_day, parallel_num=-1)
+# sp500_daily.to_csv(f'{DATA_PATH}/sp500_daily.csv', index=False)
 
 
-# Generate the image set
-train_data, test_data, table = dataset.generate_images()
+# # Create or open the HDF5 file
+# with h5py.File(hdf5_train_path, 'a') as hdf5_file:
+    
+#     total_images = 6000000
+    
+#     # Create the dataset
+#     images_dataset = hdf5_file.create_dataset("images", (total_images,), dtype=h5py.special_dtype(vlen=np.dtype('uint8')))
+#     labels_dataset = hdf5_file.create_dataset("labels", (total_images,), dtype=np.float32)
+#     permnos_dataset = hdf5_file.create_dataset("permnos", (total_images,), dtype=h5py.string_dtype(encoding='utf-8'))
+#     dates_dataset = hdf5_file.create_dataset("dates", (total_images,), dtype=h5py.string_dtype(encoding='utf-8'))
+
+
+# train_data, test_data, table = dataset.generate_images()
 
 
 #####################################################
@@ -162,8 +220,10 @@ hdf5_test_path = f'{DATA_PATH}/{market}/{table}_test.h5'
 # train_data = train_data.values.tolist()
 # test_data = test_data.values.tolist()
 # (entry, path, run=None)
-generate_graphs.show_single_graph(hdf5_train_path, 4)
-generate_graphs.show_single_graph(hdf5_test_path, 3)
+generate_graphs.show_single_graph(hdf5_train_path, 140800)
+generate_graphs.show_single_graph(hdf5_test_path, 569989)
+
+
 
 
 
@@ -179,37 +239,42 @@ import custom_dataset
 reload(custom_model)
 reload(custom_dataset)
 
+# scp "C:\Users\bjark\Documents\AU\Kandidat\4. Semester\Code\Speciale-Code\data\US\I20VolTInd20_train.h5" olsenbja@lumi.csc.fi:/scratch/project_465001092/Speciale-Code/data/US
+# Load the dataset without transformations for now
+graph_dataset_init = custom_dataset.GraphDataset(path=hdf5_train_path, transform=transforms.ToTensor(), mode='train')
 
-# # Load the dataset without transformations for now
-# graph_dataset_init = custom_dataset.GraphDataset(path=hdf5_train_path, transform=transforms.ToTensor(), mode='train')
+init_loader = DataLoader(graph_dataset_init, batch_size=128, shuffle=False, num_workers=4)
 
-# init_loader = DataLoader(graph_dataset_train, batch_size=128, shuffle=False, num_workers=4)
+# Initialize variables for calculating mean and std
+mean = 0.0
+std = 0.0
+n_samples = 0
 
-# # Initialize variables for calculating mean and std
-# mean = 0.0
-# std = 0.0
-# n_samples = 0
-
-# for batch in init_loader:
-#     images = batch['image']
-#     batch_samples = images.size(0)  # Batch size (number of images in the batch)
-#     images = images.view(batch_samples, images.size(1), -1)  # Flatten the images to (batch_size, channels, height*width)
+for batch in tqdm(init_loader, desc="Calculating mean and std"):
+    images = batch['image']
+    batch_samples = images.size(0)  # Batch size (number of images in the batch)
+    images = images.view(batch_samples, images.size(1), -1)  # Flatten the images to (batch_size, channels, height*width)
     
-#     mean += images.mean(2).sum(0)
-#     std += images.std(2).sum(0)
-#     n_samples += batch_samples
+    mean += images.mean(2).sum(0)
+    std += images.std(2).sum(0)
+    n_samples += batch_samples
 
-# mean /= n_samples
-# std /= n_samples
+mean /= n_samples
+std /= n_samples
 
-# # Convert the computed mean and std from tensor to float
-# computed_mean = mean.item()
-# computed_std = std.item()
+# Convert the computed mean and std from tensor to float
+computed_mean = mean.item()
+computed_std = std.item()
 
 #### From previous run 
 
-computed_mean = 0.08589867502450943
-computed_std = 0.27876555919647217
+# ### More price steps
+# computed_mean = 0.08589867502450943
+# computed_std = 0.27876555919647217
+
+### No added steps, but continuous MA line
+computed_mean = 0.1057652160525322
+computed_std = 0.3043188750743866
 
 ####
 
@@ -255,7 +320,39 @@ valid_loader = DataLoader(dataset=valid_loader, batch_size=num_in_batch,
 test_loader = DataLoader(graph_dataset_test, batch_size=num_in_batch, 
                          shuffle=False, num_workers=num_workers, pin_memory=True)
 
-# for i, batch in enumerate(test_loader):
+
+
+def check_for_missing_data(dataloader, pred_win):
+    """
+    Iterates through the DataLoader to check for NaN values in inputs and labels.
+    """
+    for batch_idx, batch in enumerate(tqdm(dataloader, desc="Checking data")):
+        inputs = batch['image']
+        labels = batch[f'ret{pred_win}']
+        
+        # Check for NaNs in inputs
+        if torch.isnan(inputs).any():
+            print(f"NaN detected in inputs at batch {batch_idx}")
+        
+        # Check for NaNs in labels
+        if torch.isnan(labels).any():
+            print(f"NaN detected in labels at batch {batch_idx}")
+        
+        # Optionally: Check for infinity
+        if torch.isinf(inputs).any():
+            print(f"Infinity detected in inputs at batch {batch_idx}")
+        if torch.isinf(labels).any():
+            print(f"Infinity detected in labels at batch {batch_idx}")
+
+# Use the function to check for NaNs in the training and validation loaders
+print("Checking training data for NaNs or missing data...")
+check_for_missing_data(train_loader, ps)
+
+print("Checking validation data for NaNs or missing data...")
+check_for_missing_data(valid_loader, ps)
+
+
+# for i, batch in enumerate(train_loader):
 #     print(batch)
 #     if i == 0:
 #         break
@@ -278,7 +375,7 @@ CNN2D_model = custom_model.CNNModel(
 CNN2D_model.to(device)
 
 
-n_epochs = 15
+n_epochs = 5
 ps = 20
 
 import train
@@ -309,7 +406,7 @@ torch.save(model.state_dict(), f'{PROJECT_PATH}/model/h5_2_NYSE_930101_200101.pt
 model = CNN2D_model  # Initialize the model
 # model.load_state_dict(torch.load(f'{PROJECT_PATH}/model/100101_231231.pth'))
 # model.load_state_dict(torch.load(f'{PROJECT_PATH}/model/NYSE_930101_200101.pth'))
-model.load_state_dict(torch.load(f'{PROJECT_PATH}/model/h5_NYSE_930101_200101.pth'))
+model.load_state_dict(torch.load(f'{PROJECT_PATH}/model/LUMI_Train_NYSE_930101_200101.pth'))
 
 model.to(device)
 model.eval()  # Set the model to evaluation mode
@@ -384,7 +481,7 @@ with torch.no_grad():
         # Record logits along with permno and date for each item in the batch
         for j in range(images.size(0)):
             results.append({
-                'permno': batch['permno'][j].split('/')[-1],
+                'permno': batch['permno'][j],
                 'date': batch['date'][j],
                 'neg_ret': outputs[j, 0].item(),  # Logit for negative return
                 'pos_ret': outputs[j, 1].item()   # Logit for positive return
@@ -429,7 +526,7 @@ results_df.sort_values(by=['date', 'pos_prob'], inplace=True)
 
 
 # Convert 'permno' to string in both DataFrames if they are supposed to be treated as categorical identifiers
-sp500_monthly['permno'] = sp500_monthly['permno'].astype(str)
+# sp500_monthly['permno'] = sp500_monthly['permno'].astype(str)
 
 US_market_monthly['permno'] = US_market_monthly['permno'].astype(str)
 
@@ -743,6 +840,11 @@ store_images_in_hdf5(train_csv_path, test_csv_path, hdf5_train_path, hdf5_test_p
 
 
 
+ # with open('C:/Users/bjark/Documents/AU/Kandidat/4. Semester/Code/Speciale-Code/data/I20VolTInd20/1993/10057_1993-03-02.png', 'rb') as img:
+ #     # image_array = np.array(img.convert('L'), dtype=np.uint8)
+ #     binary_data = img.read()
+
+
 
 import h5py
 import numpy as np
@@ -909,10 +1011,10 @@ for batch in tqdm(train_loader, desc="Training Progress", unit="batch"):
 
 
 
-
-
-
-
+a = hdf5_file["images"][:][pd.isna(hdf5_file["images"][:])]
+b = hdf5_file["labels"][:][pd.isna(hdf5_file["labels"][:])]
+c = hdf5_file["permnos"][:][pd.isna(hdf5_file["permnos"][:])]
+d = hdf5_file["dates"][:][pd.isna(hdf5_file["dates"][:])]
 
 
 

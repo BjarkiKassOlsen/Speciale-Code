@@ -63,7 +63,7 @@ def evaluate(model, dataloaders_dict, pred_win, criterion, new_label=None):
                     .to(device, dtype=torch.float)
                 )
             else:
-                labels = batch[f'ret{pred_win}'].to(device)
+                labels = batch['label'].to(device)
 
             outputs = model(inputs)
             loss = criterion(outputs, labels)
@@ -169,7 +169,7 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
             for batch in data_iterator:
                 
                 inputs = batch['image'].to(device, dtype=torch.float32)
-                labels = batch[f'ret{pred_win}'].to(device, dtype=torch.float32)
+                labels = batch['label'].to(device, dtype=torch.float32)
 
                 with torch.set_grad_enabled(phase == "train"):
                     

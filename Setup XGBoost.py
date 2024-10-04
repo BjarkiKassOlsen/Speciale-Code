@@ -17,7 +17,7 @@ conn = wrds.Connection(wrds_username='bjarki')
 
 # Setting start and end date for the data
 start_date = "01/01/1993"
-end_date = "01/01/2020"
+end_date = "01/01/2022"
 
 
 
@@ -34,23 +34,32 @@ ff5_monthly = functions.load_ff5_data(conn, start_date, end_date, freq = 'monthl
 
 conn.close()
 
+#############
 
+### Get the characteristic dataset
+
+# Read the unzipped CSV file
+csv_filename = 'signed_predictors_dl_wide.csv'
+csv_file_path = os.path.join(DATA_PATH, csv_filename)
+print("Reading the CSV file...")
+dfChar = pd.read_csv(csv_file_path)
+
+# ==== MERGE DATAFRAMES ====
+# Assuming 'crspmsignal' dataframe already exists
+print("Merging datasets...")
+dfChar = pd.merge(dfChar, crspmsignal, on=['permno', 'yyyymm'], how='inner')
+
+dfChar.to_csv(f'{DATA_PATH}/predictors_and_crspm.csv')
 
 #################### Train and test data ####################
 # Rank and scale the characteristics to have values ranging from -1 to 1, excluding 'yyyymm' and 'permno'
-df = dfChar.set_index(['yyyymm', 'permno']).groupby('yyyymm').rank(pct=True) * 2 - 1
+dfChar = dfChar.set_index(['yyyymm', 'permno']).groupby('yyyymm').rank(pct=True) * 2 - 1
 
 # Transform the characteristics to have the cross-sectional median value if a missing value
-df = df.fillna(df.groupby('yyyymm').transform('median'))
+dfChar = dfChar.fillna(df.groupby('yyyymm').transform('median'))
 
 # Reset index to bring 'yyyymm' and 'permno' back as columns
-df = df.reset_index()
-
-
-# Start from 1993 as the CNN data is first all available there
-dfChar = df[df['yyyymm']>199212]
-dfChar = dfChar[dfChar['yyyymm']<202001]
-
+dfChar = dfChar.reset_index()
 
 
 
