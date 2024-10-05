@@ -101,12 +101,9 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
     # Keep track of the best model
     best_validate_metrics = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0}
     best_model = copy.deepcopy(model.state_dict())
-    train_metrics = {"prev_loss": 10.0, "pattern_accy": -1}
 
     # Store stats for each epoch
     epoch_stats_history = {'train': [], 'valid': []}
-
-    # prev_weight_dict = {}
 
     # Initialize epoch data for the first run
     # Keep track of running metrics
@@ -200,8 +197,9 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
                 # Update the running metrics
                 _update_running_metrics(loss, labels, preds, running_metrics)
 
-                # # Delete the variables to free up memory
-                # del inputs, labels, data, target
+                # Free up GPU memory by deleting tensors after use
+                # del inputs, labels, outputs, preds
+                
             
             # Calculate the epoch statistics
             if phase == "train":
@@ -217,6 +215,11 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
                     for metric in ["loss", "accy", "MCC", "epoch", "diff"]:
                         best_validate_metrics[metric] = epoch_stat_valid[metric]
                     best_model = copy.deepcopy(model.state_dict())
+
+
+        # Clean up memory usage after each epoch
+        torch.cuda.empty_cache()
+        gc.collect()
 
         # Save the epoch stats history
         epoch_stats_history["train"].append(epoch_stat_train)
@@ -246,11 +249,7 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
     model.load_state_dict(best_model)
     best_validate_metrics["model_state_dict"] = model.state_dict().copy()
 
-    # train_metrics = evaluate(model, {"train": dataloaders_dict["train"]}, 
-    #                          pred_win, criterion)["train"]
-    # train_metrics["epoch"] = best_validate_metrics["epoch"]
-
-    del best_validate_metrics["model_state_dict"]
+    # del best_validate_metrics["model_state_dict"]
 
     return epoch_stats_history, best_validate_metrics, model
 

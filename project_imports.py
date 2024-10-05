@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 from zipfile import ZipFile
 from tempfile import TemporaryDirectory
+import tempfile
 
 import wrds
 
@@ -25,12 +26,12 @@ from sklearn.model_selection import train_test_split
 
 
 import optuna
+import gc
 
 import xgboost as xgb
 
 import h5py
 from PIL import Image
-import cv2
 import io
 import copy
 
@@ -57,6 +58,7 @@ def get_dir(dir):
     return dir
 
 if platform.system() == 'Windows':
+    import cv2
     PROJECT_PATH = get_dir('C:/Users/bjark/Documents/AU/Kandidat/4. Semester/Code/Speciale-Code')
     DATA_PATH = get_dir(os.path.join(PROJECT_PATH, "data"))
 elif platform.system() == 'Linux':
