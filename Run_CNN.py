@@ -73,7 +73,12 @@ def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transf
     train_window_years = 7
     test_window = 1
 
-    cumulative_years = 0  # Track months to decide when to reinitialize
+    # Track when next tuning period is
+    reset_years = 5
+    next_tuning = train_start + ((int(model_run_nr) - 1)*100)
+
+    # cumulative_years = 0  # Track months to decide when to reinitialize
+    # Re_init = True # Start by no initializing
     
     # Initialize the model (use the actual class reference)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -112,13 +117,18 @@ def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transf
         print(f"Training from {train_start} to {train_end}, Predicting from {train_end} to {test_end}")
 
         # Reinitialize the model if the cumulative months exceed the model number, to get a reset every 5 years
-        if (cumulative_years % 5) == (int(model_run_nr) - 1):
+        # if (cumulative_years % 5) == (int(model_run_nr) - 1) and Re_init == True:
+        if train_start == next_tuning:
             print(f"Reinitializing model at {train_start}")
             best_model = initialize_model()  # Reinitialize the model
             # cumulative_years = 0  # Reset the counter
             best_validate_metrics_all = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0, "diff": 0}
             n_epochs = 50
             early_stop = 10
+
+            # Set next tuning to 5 years forward
+            next_tuning += reset_years * 100
+            # Re_init = False # Turn of re initializing for next period, such that it doesn't re init each month in a year
         else:
             n_epochs = 10
             early_stop = 2
@@ -219,7 +229,6 @@ def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transf
             train_start += test_window
         else:
             train_start += 100 - 11
-            cumulative_years += 1
 
 
     # Only run this block, when all the training is done

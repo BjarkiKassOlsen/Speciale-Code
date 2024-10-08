@@ -196,7 +196,7 @@ def objective(trial, Chars_train, Labels_train_class, ret, train_start, train_en
         dvalid = xgb.DMatrix(X_valid, label=y_valid)
         
         # Train the model
-        model = xgb.train(params, dtrain, num_boost_round=300, verbose_eval=False)
+        model = xgb.train(params, dtrain, num_boost_round=100, verbose_eval=False)
         
         # Predict on validation set
         pred = model.predict(dvalid)
@@ -293,7 +293,7 @@ with tqdm(total=((int((202201 - train_end)/100)*12)), desc="Overall Progress", p
                 # Restart model trained
                 trained_model = None
                 
-            # Set next tuning to 5 years forward
+            # Set next tuning to 1 year forward
             next_tuning += tuning_years * 100
 
         
