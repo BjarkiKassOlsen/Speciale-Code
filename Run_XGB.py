@@ -44,7 +44,8 @@ ws = 20
 hdf5_dataset_path = f'{DATA_PATH}/{market}/{table}_dataset.h5'
 
 # Initialize the model (use the actual class reference)
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+# device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu'
 
 
 def portfolio_sorting(df, pred_col='pred', ret_col='ret', me_col=None, n_portfolios=10):
@@ -240,7 +241,7 @@ best_param_value = np.inf
 
 # Track when next tuning period is
 next_tuning = train_start
-tuning_years = 3
+tuning_years = 1
 
 # Load all dates
 with h5py.File(hdf5_dataset_path, 'r') as file:
@@ -275,7 +276,7 @@ with tqdm(total=((int((202201 - train_end)/100)*12)), desc="Overall Progress", p
             study = optuna.create_study(direction='minimize')
             study.optimize(lambda trial: objective(trial, Chars_train, Labels_train_class, Labels_train, 
                                                 train_start, train_end, all_dates[mask_train], valid_window_years, device), 
-                        n_trials=2, n_jobs=2, show_progress_bar=True )
+                        n_trials=8, n_jobs=8, show_progress_bar=True )
         
             # Get best hyperparameters
             best_params = study.best_params
@@ -288,12 +289,12 @@ with tqdm(total=((int((202201 - train_end)/100)*12)), desc="Overall Progress", p
                 
                 # Update best value
                 best_param_value = study.best_value
+
+                # Restart model trained
+                trained_model = None
                 
             # Set next tuning to 5 years forward
             next_tuning += tuning_years * 100
-            
-            # Restart model trained
-            trained_model = None
 
         
         # Split into train and validation sets
@@ -358,10 +359,15 @@ with tqdm(total=((int((202201 - train_end)/100)*12)), desc="Overall Progress", p
          # Cleanup after training is done for this time period
         print("Cleaning up memory after training and prediction phase...")
 
+        print_memory_stats(epoch='After training')
+
         # Delete large variables no longer in use
         del X_train, X_valid, X_test, y_train, y_valid, y_test_class, dtrain, dvalid, dtest
+        del Chars_train, Labels_train, 
         torch.cuda.empty_cache()
         gc.collect()
+
+        print_memory_stats(epoch='After training and cleaning')
 
         # Update progress bar and Neptune
         pbar.update(1)
@@ -372,48 +378,47 @@ with tqdm(total=((int((202201 - train_end)/100)*12)), desc="Overall Progress", p
             train_start += test_window
         else:
             train_start += 100 - 11
-            break
 
         # return all_forecasts
 
 
-# # Only run this block at the very end
-# train_start = 199301 # Set back to the start of the period
-# train_end = train_start + train_window_years * 100
-# test_end = train_end + test_window
+# Only run this block at the very end
+train_start = 199301 # Set back to the start of the period
+train_end = train_start + train_window_years * 100
+test_end = train_end + test_window
 
-# mask_train = (train_start <= np.array(all_dates, dtype=int)) & (np.array(all_dates, dtype=int) < train_end)
-# # Extract training and validation data
-# with h5py.File(hdf5_dataset_path, 'r') as file:
-#     Chars_train = file['chars'][:][mask_train]
-#     Labels_train = file['labels'][mask_train]
+mask_train = (train_start <= np.array(all_dates, dtype=int)) & (np.array(all_dates, dtype=int) < train_end)
+# Extract training and validation data
+with h5py.File(hdf5_dataset_path, 'r') as file:
+    Chars_train = file['chars'][:][mask_train]
+    Labels_train = file['labels'][mask_train]
     
-# # Convert labels to binary classes
-# Labels_train_class = np.array([1 if label > 0 else 0 for label in Labels_train])
+# Convert labels to binary classes
+Labels_train_class = np.array([1 if label > 0 else 0 for label in Labels_train])
 
-# dtrain = xgb.DMatrix(Chars_train, label=Labels_train_class)
+dtrain = xgb.DMatrix(Chars_train, label=Labels_train_class)
 
-# # Forecast using the model
-# train_pred = trained_model.predict(dtrain)
+# Forecast using the model
+train_pred = trained_model.predict(dtrain)
 
-# # Extract training and validation data
-# with h5py.File(hdf5_dataset_path, 'r') as file:
-#     permnos = file['permnos'][mask_train]
-#     dates = file['dates'][mask_train]
-#     me = file['ME'][mask_train]
+# Extract training and validation data
+with h5py.File(hdf5_dataset_path, 'r') as file:
+    permnos = file['permnos'][mask_train]
+    dates = file['dates'][mask_train]
+    me = file['ME'][mask_train]
 
-# # Prepare a DataFrame to collect results
-# batch_results_train = pd.DataFrame({
-#     'permno': [permno.decode('utf-8') for permno in permnos],
-#     'date': [date.decode('utf-8') for date in dates],
-#     'label': Labels_train,
-#     'ME': me,
-#     'neg_ret': 1 - train_pred,
-#     'pos_ret': train_pred
-# })
+# Prepare a DataFrame to collect results
+batch_results_train = pd.DataFrame({
+    'permno': [permno.decode('utf-8') for permno in permnos],
+    'date': [date.decode('utf-8') for date in dates],
+    'label': Labels_train,
+    'ME': me,
+    'neg_ret': 1 - train_pred,
+    'pos_ret': train_pred
+})
 
-# # Collct In-Sample results
-# batch_results_train.to_csv(f'{DATA_PATH}/returns/XGBoost_IS.csv')
+# Collct In-Sample results
+batch_results_train.to_csv(f'{DATA_PATH}/returns/XGBoost_IS.csv')
 
 
 # Collect OOS results

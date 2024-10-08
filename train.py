@@ -84,8 +84,8 @@ def evaluate(model, dataloaders_dict, pred_win, criterion, new_label=None):
     return res_dict
 
 
-def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader, 
-                   early_stop, early_stop_patience, lr=1e-4, regression_label=False, run=None):
+def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader, early_stop, early_stop_patience,
+                   best_validate_metrics = None, lr=1e-4, regression_label=False, run=None):
 
     # Define a loss function and optimizer
     if regression_label:
@@ -99,7 +99,8 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
     dataloaders_dict = {"train": train_loader, "valid": valid_loader}
 
     # Keep track of the best model
-    best_validate_metrics = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0}
+    if best_validate_metrics is None:
+        best_validate_metrics = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0}
     best_model = copy.deepcopy(model.state_dict())
 
     # Store stats for each epoch
@@ -247,7 +248,7 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader,
 
     # Load the best model weights
     model.load_state_dict(best_model)
-    best_validate_metrics["model_state_dict"] = model.state_dict().copy()
+    # best_validate_metrics["model_state_dict"] = model.state_dict().copy()
 
     # del best_validate_metrics["model_state_dict"]
 

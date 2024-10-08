@@ -62,7 +62,7 @@ custom_transforms = transforms.Compose([
 
 
 
-def rolling_window_training(hdf5_dataset_path, model_class, transform, all_dates, num_in_batch=128, num_workers=8, n_epochs=5, lr=1e-4, train_ratio=0.8, run = None):
+def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transform, all_dates, num_in_batch=128, num_workers=8, lr=1e-4, train_ratio=0.8, run = None):
     """Performs rolling window training and testing on the provided HDF5 dataset."""
     all_epoch_stats = []  # Store training stats for each window
     # Initialize list to collect DataFrames
@@ -72,25 +72,33 @@ def rolling_window_training(hdf5_dataset_path, model_class, transform, all_dates
     train_start = 199301  # Initial training start year as an integer
     train_window_years = 7
     test_window = 1
+
+    cumulative_years = 0  # Track months to decide when to reinitialize
     
     # Initialize the model (use the actual class reference)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
-    if model_class == 'CNN':
-        # Instantiate the CNN model
-        model = custom_model.CNNModel(
-            win_size=20,
-            inplanes=64,
-            drop_prob=0.50,
-            batch_norm=True,
-            xavier=True,
-            lrelu=True,
-            bn_loc="bn_bf_relu",
-            regression_label=False
-        )
+    # Model initialization function
+    def initialize_model():
+        if model_class == 'CNN':
+            return custom_model.CNNModel(
+                win_size=20,
+                inplanes=64,
+                drop_prob=0.50,
+                batch_norm=True,
+                xavier=True,
+                lrelu=True,
+                bn_loc="bn_bf_relu",
+                regression_label=False
+            ).to(device) # Send model to the GPU
     
-    # Send model to the GPU
-    model.to(device)
+    # Initialize the model
+    best_model = initialize_model()
+    n_epochs = 50
+    early_stop = 10
+
+    # Initialize best validation metrics
+    best_validate_metrics_all = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0, "diff": 0}
 
     # Initialize the dataset
     dataset_train = custom_dataset.GraphDataset(path=hdf5_dataset_path, transform=transform, mode='train', model=model_class)
@@ -102,6 +110,18 @@ def rolling_window_training(hdf5_dataset_path, model_class, transform, all_dates
         test_end = train_end + test_window     
 
         print(f"Training from {train_start} to {train_end}, Predicting from {train_end} to {test_end}")
+
+        # Reinitialize the model if the cumulative months exceed the model number, to get a reset every 5 years
+        if (cumulative_years % 5) == (int(model_run_nr) - 1):
+            print(f"Reinitializing model at {train_start}")
+            best_model = initialize_model()  # Reinitialize the model
+            # cumulative_years = 0  # Reset the counter
+            best_validate_metrics_all = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0, "diff": 0}
+            n_epochs = 50
+            early_stop = 10
+        else:
+            n_epochs = 10
+            early_stop = 2
 
         # Filter the dataset using the preloaded dates for training
         indices_train = [i for i, date in enumerate(all_dates) if train_start <= int(date.decode('utf-8')) < train_end]
@@ -130,17 +150,18 @@ def rolling_window_training(hdf5_dataset_path, model_class, transform, all_dates
         test_loader = DataLoader(graph_dataset_test, batch_size=num_in_batch, shuffle=False, num_workers=num_workers, pin_memory=True)
 
         # Set model to train
-        model.train()
-        
+        best_model.train()
+
         # Train the model
         epoch_stats, best_validate_metrics, model = train.train_n_epochs(
             n_epochs=n_epochs,
-            model=model,
+            model=best_model,
             pred_win=20,
             train_loader=train_loader,
             valid_loader=valid_loader,
             early_stop=True,
-            early_stop_patience=5,
+            early_stop_patience=early_stop,
+            best_validate_metrics=best_validate_metrics_all,
             lr=lr,
             regression_label=False,
             run=run
@@ -149,21 +170,27 @@ def rolling_window_training(hdf5_dataset_path, model_class, transform, all_dates
         # Store the epoch statistics
         all_epoch_stats.append(epoch_stats)
 
+        # Ensure that we only keep the best trained model across time
+        if best_validate_metrics_all['loss'] > best_validate_metrics['loss']:
+            best_validate_metrics_all = best_validate_metrics
+            best_model = copy.deepcopy(model.state_dict())
+
         # Print memory usage after training
         print_memory_stats(epoch="After Training")
         # Memory cleanup before predicting
+        del best_validate_metrics, model
         torch.cuda.empty_cache()
         gc.collect()
 
         # Set model to evalutaion for prediction
-        model.eval()
+        best_model.eval()
         
         # Disable gradient computation for inference
         with torch.no_grad():
             # Wrap your data loader with tqdm for a progress bar
             for i, batch in tqdm(enumerate(test_loader), total=len(test_loader), desc='Predicting'):
                 images = batch['image'].to(device)  # Ensure images are on the same device as the model
-                outputs = model(images)  # Get logits from the model
+                outputs = best_model(images)  # Get logits from the model
 
                 # Record logits along with permno and date for each item in the batch
                 batch_results = pd.DataFrame({
@@ -178,68 +205,67 @@ def rolling_window_training(hdf5_dataset_path, model_class, transform, all_dates
                 results.append(batch_results)
                 
                 # Explicitly delete the batch_results and run garbage collection
-                del batch_results
+                del batch_results, images, outputs, batch
                 torch.cuda.empty_cache()
                 gc.collect()
+
+        # Delete loaders and model references to free up memory
+        del train_loader, valid_loader, test_loader
+        torch.cuda.empty_cache()
+        gc.collect()
                 
         # Move the window one month forward
         if train_start % 100 != 12:
             train_start += test_window
         else:
             train_start += 100 - 11
-            break
-            
-        # Move the training window forward by 5 years for the next iteration
-        # train_start += test_window_years  # Move start forward by 5 years
+            cumulative_years += 1
 
-        # # Check if we are beyond the dataset's final period (e.g., after 2022)
-        # if train_end >= 2022:
-        #     break
 
-    # # Only run this block, when all the training is done
-    # # DataLoader for train and validation
-    # dataset_train_pred = custom_dataset.GraphDataset(path=hdf5_dataset_path, transform=transform, mode='test', model=model_class)
+    # Only run this block, when all the training is done
+    # DataLoader for train and validation
+    dataset_train_pred = custom_dataset.GraphDataset(path=hdf5_dataset_path, transform=transform, mode='test', model=model_class)
     
-    # # Filtered dataset based on date range for training
-    # graph_dataset_train_pred = torch.utils.data.Subset(dataset_train_pred, indices_train)
-    # train_loader = DataLoader(dataset=graph_dataset_train_pred, batch_size=num_in_batch, shuffle=False, num_workers=num_workers, pin_memory=True)
+    # Filtered dataset based on date range for training
+    graph_dataset_train_pred = torch.utils.data.Subset(dataset_train_pred, indices_train)
+    train_loader = DataLoader(dataset=graph_dataset_train_pred, batch_size=num_in_batch, shuffle=False, num_workers=num_workers, pin_memory=True)
     
     
-    # # Disable gradient computation for inference
-    # with torch.no_grad():
-    #     # Wrap your data loader with tqdm for a progress bar
-    #     for i, batch in tqdm(enumerate(train_loader), total=len(train_loader), desc='Predicting'):
-    #         images = batch['image'].to(device)  # Ensure images are on the same device as the model
-    #         outputs = model(images)  # Get logits from the model
+    # Disable gradient computation for inference
+    with torch.no_grad():
+        # Wrap your data loader with tqdm for a progress bar
+        for i, batch in tqdm(enumerate(train_loader), total=len(train_loader), desc='Predicting'):
+            images = batch['image'].to(device)  # Ensure images are on the same device as the model
+            outputs = best_model(images)  # Get logits from the model
 
-    #         # Record logits along with permno and date for each item in the batch
-    #         batch_results = pd.DataFrame({
-    #             'permno': batch['permno'],
-    #             'date': batch['yyyymm'],
-    #             'label': batch['label'].cpu().numpy(),
-    #             'ME': batch['ME'].cpu().numpy(),
-    #             'neg_ret': outputs[:, 0].cpu().numpy(),
-    #             'pos_ret': outputs[:, 1].cpu().numpy()
-    #         })
+            # Record logits along with permno and date for each item in the batch
+            batch_results = pd.DataFrame({
+                'permno': batch['permno'],
+                'date': batch['yyyymm'],
+                'label': batch['label'].cpu().numpy(),
+                'ME': batch['ME'].cpu().numpy(),
+                'neg_ret': outputs[:, 0].cpu().numpy(),
+                'pos_ret': outputs[:, 1].cpu().numpy()
+            })
 
-    #         results_train.append(batch_results)
+            results_train.append(batch_results)
 
-    #         # Explicitly delete the batch_results and run garbage collection
-    #         del batch_results
-    #         torch.cuda.empty_cache()
-    #         gc.collect()
+            # Explicitly delete the batch_results and run garbage collection
+            del batch_results
+            torch.cuda.empty_cache()
+            gc.collect()
     
-    # # Collect all the in-sample results
-    # results_train = pd.concat(results_train, ignore_index=True)
+    # Collect all the in-sample results
+    results_train = pd.concat(results_train, ignore_index=True)
 
     # Collect all of the OOS results
     results = pd.concat(results, ignore_index=True)
     
     results.to_csv(f'{DATA_PATH}/returns/CNN_OOS_model_{model_run_nr}.csv')
-    # results_train.to_csv(f'{DATA_PATH}/returns/CNN_IS_model_{model_run_nr}.csv')
+    results_train.to_csv(f'{DATA_PATH}/returns/CNN_IS_model_{model_run_nr}.csv')
 
     print("Rolling window training complete!")
-    return all_epoch_stats, results, model
+    return all_epoch_stats, results, best_model
 
 # Load the HDF5 file and extract all dates for filtering
 with h5py.File(hdf5_dataset_path, 'r') as file:
@@ -249,12 +275,12 @@ with h5py.File(hdf5_dataset_path, 'r') as file:
 all_stats_CNN, results_CNN, model_CNN = rolling_window_training(
     hdf5_dataset_path=hdf5_dataset_path,
     model_class='CNN',  # Specify your model class name or reference here
+    model_run_nr=model_run_nr,
     transform=custom_transforms,
     all_dates = all_dates,
     num_in_batch=128,
-    num_workers=8,
-    n_epochs=2,
-    lr=1e-4,
+    num_workers=16,
+    lr=1e-5,
     train_ratio=0.8,
     run=run
 )
