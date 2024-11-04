@@ -180,7 +180,7 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader, early_
                     
                     # Compute loss
                     loss = criterion(outputs, labels) 
-                    
+                    # print(f"Loss before backward: {loss.item()}")
                     if phase == "train":
                         optimizer.zero_grad()
                         loss.backward()
@@ -199,7 +199,9 @@ def train_n_epochs(n_epochs, model, pred_win, train_loader, valid_loader, early_
                 _update_running_metrics(loss, labels, preds, running_metrics)
 
                 # Free up GPU memory by deleting tensors after use
-                # del inputs, labels, outputs, preds
+                del inputs, labels, outputs, preds
+                torch.cuda.empty_cache()
+                # gc.collect()
                 
             
             # Calculate the epoch statistics

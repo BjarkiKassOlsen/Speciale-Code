@@ -13,7 +13,7 @@ from zipfile import ZipFile
 from tempfile import TemporaryDirectory
 import tempfile
 
-import wrds
+# import wrds
 
 import torch
 import torch.nn as nn
@@ -24,9 +24,10 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset, random_split
 from sklearn.metrics import log_loss, accuracy_score
 from sklearn.model_selection import train_test_split
 
-
+import pickle
 import optuna
 import gc
+import shap
 
 import xgboost as xgb
 
@@ -70,18 +71,3 @@ elif platform.system() == 'Linux':
 
 
 
-
-###########################
-## Conection to Database ##
-###########################
-
-# Define the connection string
-# server = 'speciale-data.database.windows.net'
-# database = 'Data'
-# username = 'JB5247'
-# password = ''
-# driver= '{ODBC Driver 18 for SQL Server}'
-
-# # CONNECTION_STRING = f'DRIVER={driver};SERVER={server};DATABASE={database};UID={username};PWD={password}'
-# CONNECTION_STRING = f'DRIVER={driver};SERVER=speciale-data.database.windows.net;DATABASE=Data;UID=JB5247;PWD='
-# POOL_CONNECTION_STRING = "mssql+pyodbc://JB5247:@speciale-data.database.windows.net/Data?driver=ODBC+Driver+18+for+SQL+Server"

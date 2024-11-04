@@ -33,7 +33,7 @@ run = neptune.init_run(
 ##  Run XGB on US Market stocks  ##
 ###################################
 
-model_run_nr = os.getenv("SLURM_ARRAY_TASK_ID")
+model_run_nr = int(os.getenv("SLURM_ARRAY_TASK_ID"))-1
 
 # Specify the data path
 table = 'I20VolTInd20'
@@ -347,8 +347,11 @@ def objective(trial, Chars_train, Labels_train_class, ret, train_start, train_en
         
         # Append to the results list
         results.append(month_results)
+
+        del X_train, X_valid, y_train, y_valid
+        gc.collect()
         
-        if i % 12 == 0:
+        if valid_date_hyp_run_start % 100 == 12:
             valid_date_hyp_run_start = (valid_date_hyp_run_start - 12) + 101
             valid_date_hyp_run_end = (valid_date_hyp_run_end - 12) + 101
         else:
@@ -367,9 +370,6 @@ def objective(trial, Chars_train, Labels_train_class, ret, train_start, train_en
 
 # Function to save and load data
 def save_data(data, filepath):
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    
     if os.path.exists(filepath):
         # Load previous data
         with open(filepath, 'rb') as f:
@@ -386,134 +386,120 @@ def load_data(filepath):
             return pickle.load(f)
     else:
         return None
-    
-# Define paths for saving
-best_params_path = f'{DATA_PATH}/XGB_Stats_yearly/best_params.pkl'
 
-# Load previous data if exists
-best_params_global = load_data(best_params_path)
 
-train_start = 199301
+
+train_start = 199301 + (model_run_nr*100)
+
+# train_start = 201301 - 700
+
 train_window_years = 7
 valid_window_years = 2
 test_window = 1
 train_ratio = 0.8
 trained_model = None
-
-# Function to perform walk-forward hyperparameter tuning and forecasting
-
-results = []  # List to store DataFrame results
-results_train = [] # List to store the predictions made, for the training period, to be used for our combined model.
-all_forecasts = {}
 best_param_value = np.inf
 
-# Track when next tuning period is
-next_tuning = train_start
-tuning_years = 1
+# # Track when next tuning period is
+# next_tuning = train_start
+# tuning_years = 1
 
 # Load all dates
 with h5py.File(hdf5_dataset_path, 'r') as file:
     all_dates = file['dates'][:]
 
 train_end = train_start + train_window_years * 100
-# Use tqdm with Neptune integration for the main while loop
-with tqdm(total=((int((202201 - train_end)/100)*12)), desc="Overall Progress", position=0) as pbar:
-    while train_start + train_window_years * 100 < 202201:
-        # Define train, validation, and test periods
+
+predict_year = train_end
+
+# Define file paths for saving the results
+results_folder = f'{DATA_PATH}/XGB_Stats/{predict_year // 100}'  # Folder for this specific year's predictions
+os.makedirs(results_folder, exist_ok=True)
+
+# File paths
+best_params_path = os.path.join(results_folder, 'best_params.pkl')
+shap_values_path = os.path.join(results_folder, 'shap_values.pkl')
+batch_results_path = os.path.join(results_folder, 'XGBoost_OOS.csv')
+
+# Load previous data if exists
+results_df = pd.read_csv(batch_results_path) if os.path.exists(batch_results_path) else pd.DataFrame()
+
+study = optuna.create_study(direction='minimize')
+
+# Loop for hyperparameter tuning, training, and saving
+with tqdm(total=((int(((predict_year+100) - train_end)/100)*12)), desc="Overall Progress", position=0) as pbar:
+    while train_start + train_window_years * 100 < (predict_year+100):
         train_end = train_start + train_window_years * 100
         test_end = train_end + test_window
-        
-            
         print(f"Training from {train_start} to {train_end}, Testing from {train_end} to {test_end}")
 
-
         mask_train = (train_start <= np.array(all_dates, dtype=int)) & (np.array(all_dates, dtype=int) < train_end)
-        # Extract training and validation data
         with h5py.File(hdf5_dataset_path, 'r') as file:
             Chars_train = file['chars'][:][mask_train]
             Labels_train = file['labels'][mask_train]
-        
-        # Convert labels to binary classes
+
         Labels_train_class = np.array([1 if label > 0 else 0 for label in Labels_train])
-        
-        # Train the model using the best hyperparameters, re-estimate every 5 years
-        if train_start == next_tuning:
-            run["training/status"].log("Starting hyperparameter tuning")
-        
-            # Hyperparameter tuning using Optuna
-            study = optuna.create_study(direction='minimize')
-            study.optimize(lambda trial: objective(trial, Chars_train, Labels_train_class, Labels_train, 
-                                                train_start, train_end, all_dates[mask_train], valid_window_years, device), 
-                        n_trials=8, n_jobs=8, show_progress_bar=True )
-        
-            # Get best hyperparameters
-            best_params = study.best_params
-            
-            # Check if the best params this search is better than previous
-            if study.best_value < best_param_value:
-                
-                # Get best hyperparameters
-                best_params_global = study.best_params
-                
-                # Update best value
-                best_param_value = study.best_value
 
-                # Restart model trained
-                trained_model = None
+        # if train_start == next_tuning:
+        
+        study.optimize(lambda trial: objective(trial, Chars_train, Labels_train_class, Labels_train, 
+                                        train_start, train_end, all_dates[mask_train], valid_window_years, device), 
+                    n_trials=8, n_jobs=8, show_progress_bar=True)
+        best_params = study.best_params
+        
+        # if study.best_value < best_param_value:
+        best_params_global = study.best_params
 
-                # Save best params
-                save_data(pd.DataFrame([best_params]), best_params_path)
-                
-            # Set next tuning to 1 year forward
-            next_tuning += tuning_years * 100
+        best_params_global.update({
+                'objective': 'binary:logistic',
+                'eval_metric': 'logloss',
+                'nthread': 8,  # Using 8 threads
+                'tree_method': 'hist',  # Faster than 'exact', especially with larger datasets
+            })
+        
+        # best_param_value = study.best_value
+        trained_model = None
 
-        # Split into train and validation sets
+        # Save best params
+        save_data(pd.DataFrame([best_params]), best_params_path)
+
+        # next_tuning += tuning_years * 100
+
         X_train_size = int(len(Labels_train_class) * train_ratio)
         X_valid_size = len(Labels_train_class) - X_train_size
-
-        # Split the dataset using the precomputed indices
         X_train, X_valid, y_train, y_valid = train_test_split(Chars_train, Labels_train_class, test_size=X_valid_size, shuffle=True, random_state=42)
 
-        # Create a boolean mask for the desired date range
         mask_test = (train_end <= np.array(all_dates, dtype=int)) & (np.array(all_dates, dtype=int) < test_end)
-        
-        # Filtered dataset based on date range for training
         with h5py.File(hdf5_dataset_path, 'r') as file:
-            
             X_test = file['chars'][:][mask_test]
             y_test = file['labels'][mask_test]
             permnos = file['permnos'][mask_test]
             dates = file['dates'][mask_test]
             me = file['ME'][mask_test]
-        
-        # Convert labels to classes [0,1]
-        # y_test = [[0,1] if label > 0 else [1,0] for label in y_test]
+
         y_test_class = np.array([1 if label > 0 else 0 for label in y_test])
-        
-        # Convert to XGBoost DMatrix format
         dtrain = xgb.DMatrix(X_train, label=y_train)
         dvalid = xgb.DMatrix(X_valid, label=y_valid)
         dtest = xgb.DMatrix(X_test, label=y_test_class)
-        
-        
-        # Train the model using the best hyperparameters
-        # trained_model = xgb.train(best_params_global, dtrain, evals=[(dtrain, 'train'), (dvalid, 'eval')],
-        #                           early_stopping_rounds=10, num_boost_round=1000)
-        
-        if trained_model is None:
-            # Train from scratch
-            trained_model = xgb.train(best_params_global, dtrain, evals=[(dtrain, 'train'), (dvalid, 'eval')],
-                                    early_stopping_rounds=10, num_boost_round=2000)
-        else:
-            # Update the existing model with new data
-            trained_model = xgb.train(best_params_global, dtrain, evals=[(dtrain, 'train'), (dvalid, 'eval')],
-                                    early_stopping_rounds=10, num_boost_round=500, xgb_model=trained_model)
 
+        # if trained_model is None:
+        #     trained_model = xgb.train(best_params_global, dtrain, evals=[(dtrain, 'train'), (dvalid, 'eval')],
+        #                             early_stopping_rounds=10, num_boost_round=2000)
+        # else:
+        #     trained_model = xgb.train(best_params_global, dtrain, evals=[(dtrain, 'train'), (dvalid, 'eval')],
+        #                             early_stopping_rounds=10, num_boost_round=500, xgb_model=trained_model)
 
-        # Forecast using the model
+        trained_model = xgb.train(best_params_global, dtrain, evals=[(dtrain, 'train'), (dvalid, 'eval')],
+                                    early_stopping_rounds=10, num_boost_round=100)
+
+        explainer = shap.TreeExplainer(trained_model)
+        shap_values = explainer.shap_values(X_test)
+
+        # Save SHAP values
+        save_data(pd.DataFrame(shap_values), shap_values_path)
+
         test_pred = trained_model.predict(dtest)
 
-        # Prepare a DataFrame to collect results
         batch_results = pd.DataFrame({
             'permno': [permno.decode('utf-8') for permno in permnos],
             'date': [date.decode('utf-8') for date in dates],
@@ -522,9 +508,10 @@ with tqdm(total=((int((202201 - train_end)/100)*12)), desc="Overall Progress", p
             'neg_ret': 1 - test_pred,
             'pos_ret': test_pred
         })
-        
-        # Append to the results list
-        results.append(batch_results)
+
+        # Append results and save to CSV
+        results_df = pd.concat([results_df, batch_results], ignore_index=True)
+        results_df.to_csv(batch_results_path, index=False)
 
          # Cleanup after training is done for this time period
         print("Cleaning up memory after training and prediction phase...")
@@ -533,67 +520,65 @@ with tqdm(total=((int((202201 - train_end)/100)*12)), desc="Overall Progress", p
 
         # Delete large variables no longer in use
         del X_train, X_valid, X_test, y_train, y_valid, y_test_class, dtrain, dvalid, dtest
-        del Chars_train, Labels_train, 
+        del Chars_train, Labels_train, shap_values
         torch.cuda.empty_cache()
         gc.collect()
 
         print_memory_stats(epoch='After training and cleaning')
 
-        # Update progress bar and Neptune
-        pbar.update(1)
-        run["training/progress"].log(pbar.n)
-        
-        # Move the window one month forward
+        # Move window forward
         if train_start % 100 != 12:
             train_start += test_window
         else:
             train_start += 100 - 11
 
-        # return all_forecasts
+        pbar.update(1)
+        run["training/progress"].log(pbar.n)
+
+if model_run_nr == 0:
+
+    # Only run this block at the very end
+    train_start = 199301 # Set back to the start of the period
+    train_end = train_start + train_window_years * 100
+    test_end = train_end + test_window
+
+    mask_train = (train_start <= np.array(all_dates, dtype=int)) & (np.array(all_dates, dtype=int) < train_end)
+    # Extract training and validation data
+    with h5py.File(hdf5_dataset_path, 'r') as file:
+        Chars_train = file['chars'][:][mask_train]
+        Labels_train = file['labels'][mask_train]
+        
+    # Convert labels to binary classes
+    Labels_train_class = np.array([1 if label > 0 else 0 for label in Labels_train])
+
+    dtrain = xgb.DMatrix(Chars_train, label=Labels_train_class)
+
+    # Forecast using the model
+    train_pred = trained_model.predict(dtrain)
+
+    # Extract training and validation data
+    with h5py.File(hdf5_dataset_path, 'r') as file:
+        permnos = file['permnos'][mask_train]
+        dates = file['dates'][mask_train]
+        me = file['ME'][mask_train]
+
+    # Prepare a DataFrame to collect results
+    batch_results_train = pd.DataFrame({
+        'permno': [permno.decode('utf-8') for permno in permnos],
+        'date': [date.decode('utf-8') for date in dates],
+        'label': Labels_train,
+        'ME': me,
+        'neg_ret': 1 - train_pred,
+        'pos_ret': train_pred
+    })
+
+    # Collct In-Sample results
+    batch_results_train.to_csv(f'{DATA_PATH}/XGB_Stats/XGBoost_IS.csv')
 
 
-# Only run this block at the very end
-train_start = 199301 # Set back to the start of the period
-train_end = train_start + train_window_years * 100
-test_end = train_end + test_window
-
-mask_train = (train_start <= np.array(all_dates, dtype=int)) & (np.array(all_dates, dtype=int) < train_end)
-# Extract training and validation data
-with h5py.File(hdf5_dataset_path, 'r') as file:
-    Chars_train = file['chars'][:][mask_train]
-    Labels_train = file['labels'][mask_train]
-    
-# Convert labels to binary classes
-Labels_train_class = np.array([1 if label > 0 else 0 for label in Labels_train])
-
-dtrain = xgb.DMatrix(Chars_train, label=Labels_train_class)
-
-# Forecast using the model
-train_pred = trained_model.predict(dtrain)
-
-# Extract training and validation data
-with h5py.File(hdf5_dataset_path, 'r') as file:
-    permnos = file['permnos'][mask_train]
-    dates = file['dates'][mask_train]
-    me = file['ME'][mask_train]
-
-# Prepare a DataFrame to collect results
-batch_results_train = pd.DataFrame({
-    'permno': [permno.decode('utf-8') for permno in permnos],
-    'date': [date.decode('utf-8') for date in dates],
-    'label': Labels_train,
-    'ME': me,
-    'neg_ret': 1 - train_pred,
-    'pos_ret': train_pred
-})
-
-# Collct In-Sample results
-batch_results_train.to_csv(f'{DATA_PATH}/returns/XGBoost_IS.csv')
-
-
-# Collect OOS results
-df = pd.concat(results, ignore_index=True)
-df.to_csv(f'{DATA_PATH}/returns/XGBoost_OOS.csv')
+# # Collect OOS results
+# df = pd.concat(results, ignore_index=True)
+# df.to_csv(f'{DATA_PATH}/returns/XGBoost_OOS.csv')
 
 
 # # Get the sharpe ratio

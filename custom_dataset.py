@@ -110,6 +110,40 @@ class GraphDataset(Dataset):
         
         
         
+class FinancialDataset(Dataset):
+    def __init__(self, df, mode='train'):
+        self.df = df
+        self.X = torch.tensor(df[['XGB_prob', 'CNN_prob']].values, dtype=torch.float32)  # Pre-convert to tensors
+        self.y = torch.tensor(df['label'].values, dtype=torch.float32)  # Pre-convert to tensors
         
+        self.permno = df['permno'].values  # Keep other columns for test mode
+        self.date = df['date'].values
+        self.me = df['ME'].values
+        self.mode = mode  # 'train' or 'test'
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        X = self.X[idx]
+        y = self.y[idx]
+        
+        if self.mode == 'train':
+            # In training mode, return only X and y
+            return X, y
+        
+        elif self.mode == 'test':
+            # In test mode, return additional information (e.g., permno, date)
+            permno = self.permno[idx]
+            date = self.date[idx]
+            me = self.me[idx]
+            return {
+                'X': X,
+                'label': y,
+                'permno': permno,
+                'date': date,
+                'ME': me
+            }
+
         
 

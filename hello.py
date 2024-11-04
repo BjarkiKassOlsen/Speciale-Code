@@ -7,7 +7,7 @@ print(DATA_PATH)
 
 print('The name of my current conda environment is:')
 print(os.environ['CONDA_DEFAULT_ENV'])
-
-print(os.getenv('SLURM_ARRAY_TASK_ID'))
+model_run_nr = int(os.getenv('SLURM_ARRAY_TASK_ID'))
+print(model_run_nr)
  
-
+print(model_run_nr+2)

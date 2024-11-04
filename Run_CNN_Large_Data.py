@@ -38,7 +38,7 @@ market = 'US'
 ws = 20
 
 # Setup the path to the dataset
-hdf5_dataset_path = f'{DATA_PATH}/{market}/{table}_dataset.h5'
+hdf5_dataset_path = f'{DATA_PATH}/{market}/{table}_train.h5'
 
 # Retrieved from previous local run
 computed_mean = 0.1057652160525322
@@ -96,15 +96,18 @@ def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transf
     
     # Initialize the model
     best_model = initialize_model()
+
+    # best_model.load_state_dict(torch.load(f'{PROJECT_PATH}/model/Large_Data_930101_200101_model_{model_run_nr}.pth'))
+
     n_epochs = 20
-    early_stop = 4
+    early_stop = 1
 
     # Initialize best validation metrics
     best_validate_metrics_all = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0, "diff": 0}
 
     # Initialize the dataset
     dataset_train = custom_dataset.GraphDataset(path=hdf5_dataset_path, transform=transform, mode='train', model=model_class)
-    dataset_test = custom_dataset.GraphDataset(path=hdf5_dataset_path, transform=transform, mode='test', model=model_class)
+    # dataset_test = custom_dataset.GraphDataset(path=hdf5_dataset_path, transform=transform, mode='test', model=model_class)
     
     while  train_start + train_window_years * 100 < 202201:
         # Define train and test period dates in integer format
@@ -115,26 +118,30 @@ def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transf
 
         # Reinitialize the model if the cumulative months exceed the model number, to get a reset every 5 years
         # if (cumulative_years % 5) == (int(model_run_nr) - 1) and Re_init == True:
-        if train_start == next_tuning:
-            print(f"Reinitializing model at {train_start}")
-            best_model = initialize_model()  # Reinitialize the model
-            # cumulative_years = 0  # Reset the counter
-            best_validate_metrics_all = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0, "diff": 0}
-            n_epochs = 20
-            early_stop = 4
+        # if train_start == next_tuning:
+        #     print(f"Reinitializing model at {train_start}")
+        #     best_model = initialize_model()  # Reinitialize the model
+        #     # cumulative_years = 0  # Reset the counter
+        #     best_validate_metrics_all = {"loss": 10.0, "accy": 0.0, "MCC": 0.0, "epoch": 0, "diff": 0}
+        #     n_epochs = 20
+        #     early_stop = 4
 
-                # Set next tuning to months forward
-            if train_start % 100 != (12 - (reset_months - int(model_run_nr))):
-                next_tuning += reset_months
-            else:
-                next_tuning += 100 - reset_months
+        #         # Set next tuning to months forward
+        #     if train_start % 100 != (12 - (reset_months - int(model_run_nr))):
+        #         next_tuning += reset_months
+        #     else:
+        #         next_tuning += 100 - reset_months
             
-        else:
-            n_epochs = 10
-            early_stop = 1
+        # else:
+        #     n_epochs = 10
+        #     early_stop = 1
 
         # Filter the dataset using the preloaded dates for training
-        indices_train = [i for i, date in enumerate(all_dates) if train_start <= int(date.decode('utf-8')) < train_end]
+        # indices_train = [i for i, date in enumerate(all_dates) if train_start <= int(date.decode('utf-8')) < train_end]
+        indices_train = [
+            i for i, date in enumerate(all_dates)
+            if train_start <= int(date.decode('utf-8').replace('-', '')[:6]) < train_end
+        ]
         
         # Filtered dataset based on date range for training
         graph_dataset_train = torch.utils.data.Subset(dataset_train, indices_train)
@@ -150,14 +157,14 @@ def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transf
         train_loader = DataLoader(dataset=train_loader, batch_size=num_in_batch, shuffle=True, num_workers=num_workers, pin_memory=True)
         valid_loader = DataLoader(dataset=valid_loader, batch_size=num_in_batch, shuffle=True, num_workers=num_workers, pin_memory=True)
         
-        # Filter the dataset using the preloaded dates for testing
-        indices_test = [i for i, date in enumerate(all_dates) if train_end <= int(date.decode('utf-8')) < test_end]
+        # # Filter the dataset using the preloaded dates for testing
+        # indices_test = [i for i, date in enumerate(all_dates) if train_end <= int(date.decode('utf-8')) < test_end]
         
-        # Filtered dataset based on date range for testing
-        graph_dataset_test = torch.utils.data.Subset(dataset_test, indices_test)
+        # # Filtered dataset based on date range for testing
+        # graph_dataset_test = torch.utils.data.Subset(dataset_test, indices_test)
         
-        # DataLoader for testing
-        test_loader = DataLoader(graph_dataset_test, batch_size=num_in_batch, shuffle=False, num_workers=num_workers, pin_memory=True)
+        # # DataLoader for testing
+        # test_loader = DataLoader(graph_dataset_test, batch_size=num_in_batch, shuffle=False, num_workers=num_workers, pin_memory=True)
 
         # Set model to train
         best_model.train()
@@ -191,7 +198,7 @@ def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transf
         del best_validate_metrics, model
         torch.cuda.empty_cache()
         gc.collect()
-
+        break
         # Set model to evalutaion for prediction
         best_model.eval()
         
@@ -231,54 +238,54 @@ def rolling_window_training(hdf5_dataset_path, model_class, model_run_nr, transf
             train_start += 100 - 11
 
 
-    # Only run this block, when all the training is done
+    # # Only run this block, when all the training is done
 
-    train_start = 199301
-    train_end = train_start + train_window_years * 100
+    # train_start = 199301
+    # train_end = train_start + train_window_years * 100
 
-    # DataLoader for train and validation
-    dataset_train_pred = custom_dataset.GraphDataset(path=hdf5_dataset_path, transform=transform, mode='test', model=model_class)
+    # # DataLoader for train and validation
+    # dataset_train_pred = custom_dataset.GraphDataset(path=hdf5_dataset_path, transform=transform, mode='test', model=model_class)
 
-    # Filter the dataset using the preloaded dates for training
-    indices_train_pred = [i for i, date in enumerate(all_dates) if train_start <= int(date.decode('utf-8')) < train_end]
+    # # Filter the dataset using the preloaded dates for training
+    # indices_train_pred = [i for i, date in enumerate(all_dates) if train_start <= int(date.decode('utf-8')) < train_end]
 
-    # Filtered dataset based on date range for training
-    graph_dataset_train_pred = torch.utils.data.Subset(dataset_train_pred, indices_train_pred)
-    train_loader = DataLoader(dataset=graph_dataset_train_pred, batch_size=num_in_batch, shuffle=False, num_workers=num_workers, pin_memory=True)
+    # # Filtered dataset based on date range for training
+    # graph_dataset_train_pred = torch.utils.data.Subset(dataset_train_pred, indices_train_pred)
+    # train_loader = DataLoader(dataset=graph_dataset_train_pred, batch_size=num_in_batch, shuffle=False, num_workers=num_workers, pin_memory=True)
     
     
-    # Disable gradient computation for inference
-    with torch.no_grad():
-        # Wrap your data loader with tqdm for a progress bar
-        for i, batch in tqdm(enumerate(train_loader), total=len(train_loader), desc='Predicting'):
-            images = batch['image'].to(device)  # Ensure images are on the same device as the model
-            outputs = best_model(images)  # Get logits from the model
+    # # Disable gradient computation for inference
+    # with torch.no_grad():
+    #     # Wrap your data loader with tqdm for a progress bar
+    #     for i, batch in tqdm(enumerate(train_loader), total=len(train_loader), desc='Predicting'):
+    #         images = batch['image'].to(device)  # Ensure images are on the same device as the model
+    #         outputs = best_model(images)  # Get logits from the model
 
-            # Record logits along with permno and date for each item in the batch
-            batch_results = pd.DataFrame({
-                'permno': batch['permno'],
-                'date': batch['yyyymm'],
-                'label': batch['label'].cpu().numpy(),
-                'ME': batch['ME'].cpu().numpy(),
-                'neg_ret': outputs[:, 0].cpu().numpy(),
-                'pos_ret': outputs[:, 1].cpu().numpy()
-            })
+    #         # Record logits along with permno and date for each item in the batch
+    #         batch_results = pd.DataFrame({
+    #             'permno': batch['permno'],
+    #             'date': batch['yyyymm'],
+    #             'label': batch['label'].cpu().numpy(),
+    #             'ME': batch['ME'].cpu().numpy(),
+    #             'neg_ret': outputs[:, 0].cpu().numpy(),
+    #             'pos_ret': outputs[:, 1].cpu().numpy()
+    #         })
 
-            results_train.append(batch_results)
+    #         results_train.append(batch_results)
 
-            # Explicitly delete the batch_results and run garbage collection
-            del batch_results
-            torch.cuda.empty_cache()
-            gc.collect()
+    #         # Explicitly delete the batch_results and run garbage collection
+    #         del batch_results
+    #         torch.cuda.empty_cache()
+    #         gc.collect()
     
-    # Collect all the in-sample results
-    results_train = pd.concat(results_train, ignore_index=True)
+    # # Collect all the in-sample results
+    # results_train = pd.concat(results_train, ignore_index=True)
 
     # Collect all of the OOS results
     # results = pd.concat(results, ignore_index=True)
     
-    # results.to_csv(f'{DATA_PATH}/returns/CNN_OOS_model_{model_run_nr}.csv')
-    results_train.to_csv(f'{DATA_PATH}/returns/CNN_IS_model_{model_run_nr}.csv')
+    # # results.to_csv(f'{DATA_PATH}/returns/CNN_OOS_model_{model_run_nr}.csv')
+    # results_train.to_csv(f'{DATA_PATH}/returns/CNN_IS_model_{model_run_nr}.csv')
 
     print("Rolling window training complete!")
     return all_epoch_stats, results, best_model
@@ -329,7 +336,7 @@ train.plot_epoch_stats(merged_stats, run=run)
 
 
 # Save the model
-torch.save(model_CNN.state_dict(), f'{PROJECT_PATH}/model/LUMI_US_Market_930101_200101_model_{model_run_nr}.pth')
+torch.save(model_CNN.state_dict(), f'{PROJECT_PATH}/model/Large_Data_930101_200101_model_{model_run_nr}.pth')
 
 # Stop the monitoring on Neptune
 run.stop()
